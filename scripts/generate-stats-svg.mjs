@@ -55,13 +55,19 @@ const NOW = new Date('2026-11-26T16:00:00Z').getTime();
 const DAY_MS = 24 * 60 * 60 * 1000;
 const entries = [];
 
-// Deterministic pseudo-random activity across the last 24 weeks with an active streak in Oct-Nov.
-const seedPattern = [
-  [168, 4], [161, 6], [154, 9], [147, 5], [140, 12], [133, 8], [126, 3], [119, 14],
-  [112, 11], [105, 7], [98, 16], [91, 10], [84, 6], [77, 18], [70, 13], [63, 9],
-  [56, 22], [49, 15], [42, 19], [35, 25], [28, 30], [21, 24], [14, 36], [10, 40],
-  [8, 28], [7, 32], [6, 26], [5, 42], [4, 48], [3, 55], [2, 85], [1, 120], [0, 74],
-];
+// Deterministic multi-day developer activity across the last 36 weeks (realistic GitHub-style heatmap).
+const seedPattern = [];
+for (let daysAgo = 250; daysAgo >= 0; daysAgo--) {
+  const hash = ((daysAgo * 2654435761) >>> 0) % 100;
+  const isWeekend = (daysAgo + 2) % 7 === 0 || (daysAgo + 3) % 7 === 0;
+  const activeChance = daysAgo < 14 ? 95 : daysAgo < 60 ? 78 : daysAgo < 150 ? 60 : 38;
+  if (hash < (isWeekend ? activeChance * 0.55 : activeChance)) {
+    const base = daysAgo < 10 ? 40 : daysAgo < 45 ? 24 : 12;
+    const spike = hash % 11 === 0 ? 3.2 : hash % 5 === 0 ? 1.8 : 1;
+    const weight = Math.max(3, Math.round((base + (hash % 22)) * spike));
+    seedPattern.push([daysAgo, weight]);
+  }
+}
 
 for (const [daysAgo, weight] of seedPattern) {
   const ts = NOW - daysAgo * DAY_MS - 3600_000;
@@ -92,10 +98,11 @@ const rendered = formatStatsReport(report, {
   heatmapPalette: 'purple',
   now: NOW,
   columns: 118,
+  env: { COLORTERM: 'truecolor' },
 });
 
 const lines = rendered.split('\n');
-const WIDTH_PX = 960;
+const WIDTH_PX = 980;
 const LINE_H = 18.5;
 const HEADER_H = 44;
 const PAD_X = 24;

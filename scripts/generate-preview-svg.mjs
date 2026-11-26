@@ -87,7 +87,7 @@ function buildSection({ title, subtitle, bg, border, titleFill, subFill, default
     }
     for (const line of row.lines) {
       elems.push(
-        `<text x="${20 + padX}" y="${y}" xml:space="preserve" font-family="'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace" font-size="12.5">${ansiToTspans(line, defaultTextFill)}</text>`,
+        `<text x="${20 + padX}" y="${y}" xml:space="preserve" font-family="'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace" font-size="12">${ansiToTspans(line, defaultTextFill)}</text>`,
       );
       y += lineHeight;
     }
@@ -99,7 +99,7 @@ function buildSection({ title, subtitle, bg, border, titleFill, subFill, default
   return { svg: elems.join('\n  '), height: cardH };
 }
 
-const COLS = 136;
+const COLS = 130;
 const WIDTH_PX = 1080;
 
 const darkNormal = renderStatusline(
@@ -110,7 +110,7 @@ const darkNormal = renderStatusline(
     git: { branch: 'main', dirty: true, added: 142, removed: 38 },
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
-    env: { HTTPS_PROXY: 'http://127.0.0.1:7897' },
+    env: { COLORTERM: 'truecolor', HTTPS_PROXY: 'http://127.0.0.1:7897' },
     home: '/Users/dev',
   },
 ).split('\n');
@@ -123,6 +123,7 @@ const darkWarning = renderStatusline(
     git: { branch: 'feat/statusline', dirty: true, added: 284, removed: 62 },
     telemetry: SAMPLE_TELEMETRY.warning,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    env: { COLORTERM: 'truecolor' },
     home: '/Users/dev',
   },
 ).split('\n');
@@ -135,6 +136,7 @@ const darkCritical = renderStatusline(
     git: { branch: 'feat/statusline', dirty: true, added: 412, removed: 118 },
     telemetry: SAMPLE_TELEMETRY.critical,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    env: { COLORTERM: 'truecolor' },
     home: '/Users/dev',
   },
 ).split('\n');
@@ -146,6 +148,7 @@ const darkCompact = renderStatusline(
     color: true,
     git: { branch: 'main', dirty: false },
     telemetry: SAMPLE_TELEMETRY.claude,
+    env: { COLORTERM: 'truecolor' },
     home: '/Users/dev',
   },
 ).split('\n');
@@ -158,6 +161,7 @@ const lightNormal = renderStatusline(
     git: { branch: 'main', dirty: true, added: 48, removed: 12 },
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    env: { COLORTERM: 'truecolor' },
     home: '/Users/dev',
   },
 ).split('\n');

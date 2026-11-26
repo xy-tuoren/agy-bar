@@ -578,7 +578,10 @@ export function formatStatsReport(
     {
       label: `YEAR (${ov.year.year})`,
       value: formatTokens(ov.year.tokens),
-      sub: `${ov.year.activeDays}d · ${ov.streaks.current}d streak`,
+      sub:
+        `${ov.year.activeDays}d · ${ov.streaks.current}d streak`.length <= 16
+          ? `${ov.year.activeDays}d · ${ov.streaks.current}d streak`
+          : `${ov.year.activeDays}d · ${ov.streaks.current}d stk`,
       color: p.text,
     },
   ];

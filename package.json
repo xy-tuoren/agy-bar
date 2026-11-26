@@ -51,7 +51,7 @@
     "install:agy": "node bin/agy-bar.mjs install",
     "uninstall:agy": "node bin/agy-bar.mjs uninstall",
     "preview": "node bin/agy-bar.mjs preview",
-    "preview:svg": "node scripts/generate-preview-svg.mjs && node scripts/generate-stats-svg.mjs",
+    "preview:svg": "node scripts/generate-preview-svg.mjs && node scripts/generate-stats-svg.mjs && node scripts/generate-showcase-svgs.mjs",
     "stats": "node bin/agy-bar.mjs stats",
     "pricing": "node bin/agy-bar.mjs pricing",
     "monitor": "node bin/agy-bar.mjs monitor",
