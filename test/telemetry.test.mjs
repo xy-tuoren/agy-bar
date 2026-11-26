@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { readLedger } from '../src/stats.mjs';
-import { listSessions, recordTelemetry } from '../src/telemetry.mjs';
+import {
+  armPayloadCapture,
+  listSessions,
+  maybeCaptureRedactedPayload,
+  readCapturedPayload,
+  recordTelemetry,
+  redactPayload,
+} from '../src/telemetry.mjs';
 
 test('tracks turn speed (tok/s), 5-min cache TTL countdown, context delta, and appends to ledger', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agy-bar-tel-'));
@@ -153,6 +160,38 @@ test('isolates concurrent CLI sessions and ignores resumed baseline spikes', () 
     assert.equal(sessions[0].branch, 'feat/ui');
     assert.equal(sessions[1].sessionId, 'session-a');
     assert.equal(sessions[1].model, 'Gemini 4 Neon');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('armPayloadCapture and maybeCaptureRedactedPayload redact PII and disarm after one capture', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-dbg-'));
+  try {
+    const sample = {
+      email: 'alice@example.com',
+      conversation_id: 'b9d667f9-6d2b-4a0f-96ad-90b57a7d6f5a',
+      conversation_title: 'Secret internal roadmap',
+      workspace: { current_dir: '/Users/alice/work/repo' },
+      context_window: { total_input_tokens: 12000, used_percentage: 22.1 },
+    };
+
+    const red = redactPayload(sample, '/Users/alice');
+    assert.equal(red.email, '***@***');
+    assert.equal(red.conversation_id, 'b9d667f9…');
+    assert.equal(red.workspace.current_dir, '~/work/repo');
+    assert.equal(red.context_window.total_input_tokens, 12000);
+    assert.match(red.conversation_title, /^\[TITLE len=/);
+
+    assert.equal(maybeCaptureRedactedPayload(sample, { baseDir: dir, home: '/Users/alice' }), false);
+    armPayloadCapture({ baseDir: dir });
+    assert.equal(maybeCaptureRedactedPayload(sample, { baseDir: dir, home: '/Users/alice' }), true);
+    // One-shot: second call does nothing until re-armed.
+    assert.equal(maybeCaptureRedactedPayload(sample, { baseDir: dir, home: '/Users/alice' }), false);
+
+    const saved = readCapturedPayload({ baseDir: dir });
+    assert.equal(saved.payload.email, '***@***');
+    assert.equal(saved.payload.workspace.current_dir, '~/work/repo');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

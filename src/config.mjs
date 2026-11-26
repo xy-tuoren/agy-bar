@@ -4,16 +4,20 @@ import { dirname, join } from 'node:path';
 import { THEME_NAMES } from './themes.mjs';
 
 export const BAR_STYLES = Object.freeze({
+  smooth: Object.freeze({ fill: '█', empty: '░', partial: [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'], wrap: ['', ''] }),
   blocks: Object.freeze({ fill: '█', empty: '░', wrap: ['', ''] }),
   line: Object.freeze({ fill: '━', empty: '─', wrap: ['', ''] }),
   ascii: Object.freeze({ fill: '#', empty: '-', wrap: ['[', ']'] }),
 });
 
 export const BAR_STYLE_NAMES = Object.freeze(Object.keys(BAR_STYLES));
+export const COLOR_MODES = Object.freeze(['health', 'distinct']);
 
 export const PRESETS = Object.freeze({
   dashboard: Object.freeze({
     hint: true,
+    vim: true,
+    dir: true,
     model: true,
     effort: true,
     git: true,
@@ -21,10 +25,13 @@ export const PRESETS = Object.freeze({
     context: true,
     contextBar: true,
     contextDelta: false,
+    compactHint: true,
     capacity: true,
     cache: true,
     cacheTtl: true,
     speed: true,
+    cost: false,
+    session: false,
     quota: true,
     quotaBar: true,
     quota5h: true,
@@ -33,6 +40,8 @@ export const PRESETS = Object.freeze({
   }),
   compact: Object.freeze({
     hint: false,
+    vim: true,
+    dir: false,
     model: true,
     effort: false,
     git: true,
@@ -40,10 +49,13 @@ export const PRESETS = Object.freeze({
     context: true,
     contextBar: true,
     contextDelta: false,
+    compactHint: false,
     capacity: false,
     cache: false,
     cacheTtl: false,
     speed: false,
+    cost: false,
+    session: false,
     quota: true,
     quotaBar: false,
     quota5h: true,
@@ -52,6 +64,8 @@ export const PRESETS = Object.freeze({
   }),
   minimal: Object.freeze({
     hint: false,
+    vim: false,
+    dir: false,
     model: false,
     effort: false,
     git: false,
@@ -59,10 +73,13 @@ export const PRESETS = Object.freeze({
     context: true,
     contextBar: false,
     contextDelta: false,
+    compactHint: false,
     capacity: true,
     cache: false,
     cacheTtl: false,
     speed: false,
+    cost: false,
+    session: false,
     quota: true,
     quotaBar: false,
     quota5h: true,
@@ -77,7 +94,8 @@ export const SHOW_KEYS = Object.freeze(Object.keys(PRESETS.dashboard));
 export const DEFAULT_CONFIG = Object.freeze({
   preset: 'dashboard',
   theme: 'auto',
-  barStyle: 'blocks',
+  colorMode: 'health',
+  barStyle: 'smooth',
   barWidth: 6,
   cacheTtlSec: 300,
   ledger: true,
@@ -91,6 +109,10 @@ export const DEFAULT_CONFIG = Object.freeze({
 
 const SHOW_ALIASES = Object.freeze({
   hint: 'hint',
+  vim: 'vim',
+  dir: 'dir',
+  cwd: 'dir',
+  workspace: 'dir',
   model: 'model',
   effort: 'effort',
   git: 'git',
@@ -106,6 +128,10 @@ const SHOW_ALIASES = Object.freeze({
   'context-delta': 'contextDelta',
   context_delta: 'contextDelta',
   delta: 'contextDelta',
+  compacthint: 'compactHint',
+  'compact-hint': 'compactHint',
+  compact_hint: 'compactHint',
+  compact: 'compactHint',
   capacity: 'capacity',
   cap: 'capacity',
   cache: 'cache',
@@ -116,6 +142,10 @@ const SHOW_ALIASES = Object.freeze({
   speed: 'speed',
   tps: 'speed',
   toks: 'speed',
+  cost: 'cost',
+  usd: 'cost',
+  session: 'session',
+  turns: 'session',
   quota: 'quota',
   quotabar: 'quotaBar',
   'quota-bar': 'quotaBar',
@@ -174,6 +204,7 @@ export function normalizeConfig(raw) {
   const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const preset = PRESET_NAMES.includes(input.preset) ? input.preset : DEFAULT_CONFIG.preset;
   const theme = THEME_NAMES.includes(input.theme) ? input.theme : DEFAULT_CONFIG.theme;
+  const colorMode = COLOR_MODES.includes(input.colorMode) ? input.colorMode : DEFAULT_CONFIG.colorMode;
   const barStyle = BAR_STYLE_NAMES.includes(input.barStyle) ? input.barStyle : DEFAULT_CONFIG.barStyle;
   const barWidth = clampInt(input.barWidth, 4, 14, DEFAULT_CONFIG.barWidth);
   const cacheTtlSec = clampInt(input.cacheTtlSec, 30, 3600, DEFAULT_CONFIG.cacheTtlSec);
@@ -196,6 +227,7 @@ export function normalizeConfig(raw) {
   return {
     preset,
     theme,
+    colorMode,
     barStyle,
     barWidth,
     cacheTtlSec,
@@ -226,6 +258,7 @@ export function serializeConfig(cfg) {
     barStyle: normalized.barStyle,
     barWidth: normalized.barWidth,
   };
+  if (normalized.colorMode !== DEFAULT_CONFIG.colorMode) out.colorMode = normalized.colorMode;
   if (normalized.cacheTtlSec !== DEFAULT_CONFIG.cacheTtlSec) out.cacheTtlSec = normalized.cacheTtlSec;
   if (normalized.ledger !== DEFAULT_CONFIG.ledger) out.ledger = normalized.ledger;
   if (normalized.contextWarn !== DEFAULT_CONFIG.contextWarn) out.contextWarn = normalized.contextWarn;
@@ -318,6 +351,11 @@ export function applyConfigCommand(args = [], path = configPath()) {
           throw new Error(`Invalid theme "${value}". Choose: ${THEME_NAMES.join(', ')}`);
         }
         next.theme = value.toLowerCase();
+      } else if (['colormode', 'color-mode', 'color_mode'].includes(lower)) {
+        if (!COLOR_MODES.includes(value.toLowerCase())) {
+          throw new Error(`Invalid colorMode "${value}". Choose: ${COLOR_MODES.join(', ')}`);
+        }
+        next.colorMode = value.toLowerCase();
       } else if (['barstyle', 'bar-style', 'bar_style'].includes(lower)) {
         if (!BAR_STYLE_NAMES.includes(value.toLowerCase())) {
           throw new Error(`Invalid barStyle "${value}". Choose: ${BAR_STYLE_NAMES.join(', ')}`);

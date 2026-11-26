@@ -2,12 +2,14 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyConfigCommand, BAR_STYLE_NAMES, loadConfig, PRESET_NAMES } from '../src/config.mjs';
+import { applyConfigCommand, BAR_STYLE_NAMES, COLOR_MODES, loadConfig, PRESET_NAMES } from '../src/config.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
+import { detectModelGroup, selectQuotaEntries } from '../src/render.mjs';
 import { aggregateStats, formatStatsReport, PERIOD_NAMES, readLedger } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
+import { armPayloadCapture, readCapturedPayload } from '../src/telemetry.mjs';
 import { THEME_NAMES } from '../src/themes.mjs';
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
@@ -33,9 +35,9 @@ export const HELP_TEXT = [
   `    preset <name>         Switch layout preset (${PRESET_NAMES.join(' | ')})`,
   `    theme <name>          Switch theme (${THEME_NAMES.join(' | ')})`,
   `    bar-style <style>     Switch bar style (${BAR_STYLE_NAMES.join(' | ')})`,
-  '    enable <items...>     Enable items (git, cache, cacheTtl, speed, contextDelta, ...)',
+  '    enable <items...>     Enable items (dir, vim, cost, session, contextDelta, compactHint, ...)',
   '    disable <items...>    Disable items',
-  '    set <key> <value>...  Set barWidth, cacheTtlSec, ledger, thresholds, modelThreshold.<m>.warn',
+  `    set <key> <value>...  Set colorMode (${COLOR_MODES.join('|')}), barWidth, cacheTtlSec, ledger, thresholds`,
   '    reset                 Restore default settings',
   '',
   '  stats [period] [opts]   Show local CLI token usage, cache savings & estimated API cost',
@@ -49,11 +51,16 @@ export const HELP_TEXT = [
   '    --once                Print a single snapshot and exit',
   '    --plain               Disable ANSI colors',
   '',
+  '  debug [options]         Capture or inspect a PII-redacted AGY statusLine JSON payload',
+  '    --capture             Arm one-shot capture on the next AGY statusline refresh',
+  '    --show                Display the last captured redacted payload (default)',
+  '',
   '  preview [options]       Render live sample statuslines in your terminal',
   '    --scenario <name>     normal | warning | critical | claude | all (default: normal)',
-  '    --width <cols>        Simulated terminal width (default: 112)',
+  '    --width <cols>        Simulated terminal width (default: 116)',
   '    --preset <name>       Override preset for preview',
   '    --theme <name>        Override theme for preview',
+  `    --color-mode <mode>   Override colorMode (${COLOR_MODES.join(' | ')})`,
   '    --bar-style <style>   Override gauge style for preview',
   '    --plain               Disable ANSI colors',
   '',
@@ -73,7 +80,9 @@ function parseFlags(args) {
     else if (arg === '--plain') flags.plain = true;
     else if (arg === '--json') flags.json = true;
     else if (arg === '--once') flags.once = true;
-    else if (['--preset', '--theme', '--bar-style', '--scenario', '--width', '--model', '--interval'].includes(arg)) {
+    else if (arg === '--capture') flags.capture = true;
+    else if (arg === '--show') flags.show = true;
+    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval'].includes(arg)) {
       const value = args[++i];
       if (!value) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -165,9 +174,43 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (command === 'debug') {
+    const { flags } = parseFlags(rest);
+    if (flags.capture) {
+      const armed = armPayloadCapture();
+      console.log(`Armed one-shot redacted payload capture.`);
+      console.log(`Next time Antigravity CLI refreshes the statusline, a sanitized snapshot will be saved to:`);
+      console.log(`  ${armed.target}`);
+      console.log(`Run "agy-bar debug" afterward to inspect it.`);
+      return;
+    }
+    const captured = readCapturedPayload();
+    if (!captured) {
+      console.log('No captured payload found yet. Run "agy-bar debug --capture", wait for one agy refresh, then run "agy-bar debug".');
+      return;
+    }
+    const cfg = loadConfig();
+    const p = captured.payload || {};
+    const group = detectModelGroup(p.model, p.quota);
+    const matchedBuckets = selectQuotaEntries(p.quota, p.model, cfg.show).map((b) => b.id);
+    console.log(
+      JSON.stringify(
+        {
+          capturedAt: captured.capturedAt,
+          detectedModelGroup: group,
+          matchedQuotaBuckets: matchedBuckets,
+          payload: p,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
   if (command === 'preview') {
     const { flags } = parseFlags(rest);
-    const width = flags.width ? Number(flags.width) : 112;
+    const width = flags.width ? Number(flags.width) : 116;
     if (!Number.isFinite(width) || width < 20 || width > 300) {
       throw new Error('--width must be a number between 20 and 300.');
     }
@@ -177,6 +220,7 @@ export async function main(argv = process.argv.slice(2)) {
       preset: flags.preset || null,
       theme: flags.theme || null,
       barStyle: flags.barStyle || null,
+      colorMode: flags.colorMode || null,
       color: !flags.plain && !('NO_COLOR' in process.env),
     });
     console.log(output);

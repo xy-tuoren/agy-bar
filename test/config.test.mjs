@@ -25,6 +25,12 @@ test('applyConfigCommand persists presets, themes, bar styles, toggles, and rese
     res = applyConfigCommand(['theme', 'nord'], file);
     assert.equal(res.config.theme, 'nord');
 
+    res = applyConfigCommand(['bar-style', 'smooth'], file);
+    assert.equal(res.config.barStyle, 'smooth');
+
+    res = applyConfigCommand(['set', 'colorMode', 'distinct'], file);
+    assert.equal(res.config.colorMode, 'distinct');
+
     res = applyConfigCommand(['bar-style', 'line'], file);
     assert.equal(res.config.barStyle, 'line');
 

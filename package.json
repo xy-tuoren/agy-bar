@@ -1,7 +1,7 @@
 {
   "name": "agy-bar",
-  "version": "0.2.0",
-  "description": "Zero-dependency dashboard statusline, 5-min cache TTL countdown, live tok/s speed, usage/cost ledger, and multi-CLI monitor for Antigravity CLI (agy).",
+  "version": "0.3.0",
+  "description": "Zero-dependency dashboard statusline, smooth 8-level gauges, 5-min cache TTL countdown, live tok/s speed, usage/cost ledger, and multi-CLI monitor for Antigravity CLI (agy).",
   "type": "module",
   "license": "MIT",
   "author": "xy-tuoren",
@@ -33,6 +33,7 @@
   },
   "files": [
     "AGENTS.md",
+    "CHANGELOG.md",
     "bin/",
     "src/",
     "skills/",
@@ -45,8 +46,10 @@
     "install:agy": "node bin/agy-bar.mjs install",
     "uninstall:agy": "node bin/agy-bar.mjs uninstall",
     "preview": "node bin/agy-bar.mjs preview",
+    "preview:svg": "node scripts/generate-preview-svg.mjs",
     "stats": "node bin/agy-bar.mjs stats",
     "monitor": "node bin/agy-bar.mjs monitor",
+    "debug": "node bin/agy-bar.mjs debug",
     "doctor": "node bin/agy-bar.mjs doctor"
   }
 }

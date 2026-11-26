@@ -7,32 +7,30 @@
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-blue.svg)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-A **zero-dependency, 100% native Antigravity CLI (`agy`) statusline & telemetry toolkit** — built for CLI-first developers who want live context & quota gauges, **5-minute prompt cache expiry countdown**, **real-time `tok/s` speed**, **local usage & cost ledger (`agy-bar stats`)**, and a **multi-CLI live monitor (`agy-bar monitor`)** without ever patching desktop binaries.
+A **zero-dependency, 100% native Antigravity CLI (`agy`) statusline & telemetry toolkit** — built for CLI-first developers who want **smooth 8-level context & quota gauges**, **5-minute prompt cache expiry countdown**, **real-time `tok/s` speed**, **local usage & cost ledger (`agy-bar stats`)**, and a **multi-CLI live monitor (`agy-bar monitor`)** without ever patching desktop binaries.
 
-```text
-? for shortcuts · git:main                                                            Gemini 4 Carbon · high
-CTX ███░░░░░ 42.6% (1.0M) │ CACHE 88%·3m42s │ 142t/s                 5h █████░ 85% (2h30m) │ 7d ████░░ 64% (3d)
-```
+![agy-bar true-color preview](./assets/preview.svg)
 
 ---
 
 ## Why `agy-bar`? (Zero-Risk, CLI-Native Design)
 
 - **100% Official `statusLine` Hook** — Zero binary patching, zero Electron injection, zero proxy interception, zero account credential access. Survives every Antigravity update cleanly with zero ban risk.
-- **No Desktop App Required** — Works natively in standalone `agy` terminals, SSH/remote boxes, WSL, and multi-CLI workflows.
-- **Ultra-Fast Hot Path** — Zero runtime dependencies, O(1) per-session state updates; heavy analytics stay isolated in dedicated `stats` / `monitor` commands so typing never lags.
+- **No Desktop App Required** — Works natively in standalone `agy` terminals, SSH/remote servers, WSL, and multi-CLI workflows.
+- **Ultra-Fast Hot Path** — Zero runtime dependencies, O(1) per-session state updates; heavy analytics stay isolated in `stats` / `monitor` commands so typing never lags.
 
 ---
 
 ## Key Features
 
-- **Visual Context & Quota Gauges** — Progress bars (`blocks` / `line` / `ascii`) for context window and 5h / 7d quotas across **Gemini 4 Carbon / Hydrogen / Neon / Argon** and **Claude** pools, with per-model warning/danger thresholds.
-- **5-Minute Prompt Cache TTL Countdown** — Shows cache hit rate plus remaining cache freshness (`CACHE 88%·3m42s`), turning amber (`<= 90s`) and red (`<= 30s` / `exp`) so you can keep warm cache alive instead of burning quota on rebuilds.
-- **Live Output Speed (`tok/s`) & Context Delta (`Δ`)** — Tracks per-turn generation speed (`142t/s`) and optional context growth (`+12.4K`) directly from `agy`'s `statusLine` updates.
-- **Local Usage & Cost Ledger (`agy-bar stats`)** — Aggregates `today` / `7d` / `30d` / `all` token totals, cache hit rate, average `tok/s`, **estimated public API cost & cache savings**, daily bar charts, and net observed quota Δ (handy for shared/carpool quota tracking).
-- **Multi-CLI Live Monitor (`agy-bar monitor`)** — Terminal HUD tracking all active `agy` sessions side by side (state, workspace/branch, model, context gauge, cache TTL, speed, and global quotas).
-- **3 Presets × 6 Themes × Narrow-Width Adaptation** — `dashboard` / `compact` / `minimal` presets; `auto` / `slate-dark` / `slate-light` / `ocean` / `nord` / `mono` themes; automatic progressive shedding so lines never wrap.
-- **Safe Install / Uninstall + `/agy-bar` Skill** — Backs up your previous `statusLine`, restores cleanly on uninstall, and optionally registers the `/agy-bar` skill for natural-language configuration.
+- **Unified Health Colors & Smooth 8-Level Gauges** — Context (`CTX`) and quota (`5h` / `7d`) bars share one cohesive `green → amber → red` health palette (`colorMode: health | distinct`), rendered with 1/8-block Unicode precision (`smooth`, `blocks`, `line`, `ascii`) across **Gemini 4 Carbon / Hydrogen / Neon / Argon** and **Claude** pools.
+- **5-Minute Prompt Cache TTL Countdown** — Displays cache hit rate + remaining freshness (`CACHE 88%·3m42s`), shifting to amber (`<= 90s`) and red (`<= 30s` / `exp`) so you avoid burning quota on cold cache rebuilds.
+- **Smart Workspace, Vim & `/compact` Signals** — Line 1 pairs folder name with Git branch (`agy-bar (main*)`) and automatic `[NORMAL]` / `[INSERT]` Vim badges; line 2 adds an actionable `→/compact` hint when context hits your danger threshold.
+- **Live Output Speed (`tok/s`), Optional Cost (`~$0.42`) & Delta (`+12.4K`)** — Tracks per-turn generation speed directly from `agy` updates, with opt-in live session cost, duration/turns, and context delta.
+- **Local Usage & Cost Ledger (`agy-bar stats`)** — Aggregates `today` / `7d` / `30d` / `all` tokens, cache hit rate, average `tok/s`, **estimated public API cost & cache savings**, daily bar charts, and net observed quota Δ (handy for shared/carpool tracking).
+- **Multi-CLI Live Monitor (`agy-bar monitor`)** — Terminal HUD tracking all concurrent `agy` sessions side by side.
+- **Redacted Payload Debugger (`agy-bar debug`)** — Captures a one-shot PII-redacted AGY JSON payload for easy troubleshooting across AGY CLI updates.
+- **Safe Install / Uninstall + `/agy-bar` Skill** — Backs up your previous `statusLine`, restores cleanly on uninstall, and optionally installs the `/agy-bar` skill.
 
 ---
 
@@ -68,40 +66,47 @@ Then **restart `agy`** to see the new statusline (in an existing session, run `/
 
 ## Commands & Customization
 
-### Preview, Stats & Multi-CLI Monitor
+### Preview, Stats, Monitor & Debug
 
 ```sh
-# Preview scenarios, presets, themes & widths right in your terminal
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --scenario all --width 112
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --preset compact --theme nord --bar-style line
+# Preview scenarios, presets, themes & gauge styles
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --scenario all --width 116
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --preset compact --theme nord --bar-style smooth
 
-# View local usage statistics, cache savings & estimated API cost
+# Local usage statistics, cache savings & estimated API cost
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats today
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 7d --model claude
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --json
 
-# Monitor multiple concurrent agy CLI terminals live
+# Live multi-CLI HUD
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor --once
+
+# Capture & inspect a PII-redacted live AGY payload
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug --capture
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug
 ```
 
 ### Configuration (Takes effect immediately without restarting `agy`)
 
 ```sh
-# Layout presets: dashboard | compact | minimal
+# Presets: dashboard | compact | minimal
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config preset compact
 
 # Themes: auto | slate-dark | slate-light | ocean | nord | mono
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config theme ocean
 
-# Gauge styles: blocks (██░░) | line (━━──) | ascii ([##--])
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config bar-style line
+# Gauge styles: smooth (███▍░░) | blocks (███░░░) | line (━━━───) | ascii ([###---])
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config bar-style smooth
 
-# Toggle items (hint, model, effort, git, gitDirty, context, contextBar, contextDelta, capacity, cache, cacheTtl, speed, quota, quotaBar, quota5h, quotaWeekly, reset)
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config enable contextDelta
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config disable git speed
+# Color mode: health (unified green->amber->red) | distinct (blue CTX vs green quota)
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set colorMode health
 
-# Set per-model context warning thresholds, cache TTL, or disable local ledger
+# Toggle items (dir, vim, git, gitDirty, contextDelta, compactHint, cacheTtl, speed, cost, session, reset, ...)
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config enable cost session contextDelta
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config disable dir speed
+
+# Per-model context thresholds, cache TTL, or ledger toggle
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set modelThreshold.claude.warn 65 modelThreshold.claude.danger 85
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set cacheTtlSec 300 ledger on
 
@@ -131,6 +136,7 @@ node ~/agy-bar/bin/agy-bar.mjs uninstall --remove-skill --purge
 ```sh
 npm test         # Cross-platform Node.js built-in test suite
 npm run preview  # Render live terminal preview
+npm run preview:svg # Regenerate assets/preview.svg
 npm run stats    # Show local usage stats
 npm run monitor  # Launch multi-CLI HUD
 npm run doctor   # Verify local installation

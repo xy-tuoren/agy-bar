@@ -1,5 +1,7 @@
+import { basename } from 'node:path';
 import { bold, clipAnsi, fg, sanitizeText, visibleWidth } from './ansi.mjs';
 import { BAR_STYLES, DEFAULT_CONFIG, normalizeConfig } from './config.mjs';
+import { formatUsd } from './pricing.mjs';
 import { resolvePalette } from './themes.mjs';
 
 const KNOWN_BUCKETS = Object.freeze({
@@ -52,16 +54,43 @@ export function formatCacheTtl(seconds) {
   return `${m}m${String(s).padStart(2, '0')}s`;
 }
 
-export function renderBar(ratio, { width = 6, style = 'blocks', fillColor, trackColor, color = true } = {}) {
-  const spec = BAR_STYLES[style] || BAR_STYLES.blocks;
+export function formatDurationShort(seconds) {
+  const sec = nonNegNumber(seconds);
+  if (sec === null) return '';
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h${rm}m` : `${h}h`;
+}
+
+export function renderBar(ratio, { width = 6, style = 'smooth', fillColor, trackColor, color = true } = {}) {
+  const spec = BAR_STYLES[style] || BAR_STYLES.smooth;
   const clamped = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
-  const filledCount = Math.round(clamped * width);
-  const emptyCount = Math.max(0, width - filledCount);
-  const filled = filledCount > 0 ? fg(spec.fill.repeat(filledCount), fillColor, color) : '';
-  const empty = emptyCount > 0 ? fg(spec.empty.repeat(emptyCount), trackColor, color) : '';
+
+  let body = '';
+  if (spec.partial) {
+    const eighths = Math.round(clamped * width * 8);
+    const full = Math.floor(eighths / 8);
+    const rem = eighths % 8;
+    const partialChar = rem > 0 ? spec.partial[rem] : '';
+    const emptyCount = Math.max(0, width - full - (partialChar ? 1 : 0));
+    const filledStr = spec.fill.repeat(full) + partialChar;
+    const filled = filledStr ? fg(filledStr, fillColor, color) : '';
+    const empty = emptyCount > 0 ? fg(spec.empty.repeat(emptyCount), trackColor, color) : '';
+    body = `${filled}${empty}`;
+  } else {
+    const filledCount = Math.round(clamped * width);
+    const emptyCount = Math.max(0, width - filledCount);
+    const filled = filledCount > 0 ? fg(spec.fill.repeat(filledCount), fillColor, color) : '';
+    const empty = emptyCount > 0 ? fg(spec.empty.repeat(emptyCount), trackColor, color) : '';
+    body = `${filled}${empty}`;
+  }
+
   const leftWrap = spec.wrap[0] ? fg(spec.wrap[0], trackColor, color) : '';
   const rightWrap = spec.wrap[1] ? fg(spec.wrap[1], trackColor, color) : '';
-  return `${leftWrap}${filled}${empty}${rightWrap}`;
+  return `${leftWrap}${body}${rightWrap}`;
 }
 
 export function detectModelGroup(model, quota) {
@@ -93,7 +122,7 @@ export function formatModelName(model, includeEffort = true) {
   return includeEffort && effort ? `${cleaned} · ${effort}` : cleaned;
 }
 
-function selectQuotaEntries(quota, model, show) {
+export function selectQuotaEntries(quota, model, show) {
   if (!quota || typeof quota !== 'object' || !show.quota) return [];
   const selectedGroup = detectModelGroup(model, quota);
   const entries = Object.entries(quota)
@@ -145,31 +174,54 @@ function alignRow(left, right, width) {
   return clipAnsi(`${left} ${right}`, width);
 }
 
-function formatGitSegment(git, show, palette, color, maxBranchLen = 24) {
-  if (!show.git || !git || !git.branch) return '';
-  let branch = sanitizeText(git.branch);
-  if (!branch) return '';
-  if (branch.length > maxBranchLen) {
+function formatVimBadge(payload, show, palette, color) {
+  if (!show.vim) return '';
+  const mode = sanitizeText(payload?.vim?.mode || '').toUpperCase();
+  if (!mode) return '';
+  const tone = mode.includes('INSERT') ? palette.good : mode.includes('VISUAL') ? palette.branch : palette.accent;
+  return bold(fg(`[${mode}]`, tone, color), color);
+}
+
+function formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir = true, maxBranchLen = 22 } = {}) {
+  const rawCwd = payload?.workspace?.current_dir || payload?.cwd || '';
+  const dirName = withDir && show.dir && rawCwd ? sanitizeText(basename(rawCwd)) : '';
+  const branchRaw = show.git && git?.branch ? sanitizeText(git.branch) : '';
+  let branch = branchRaw;
+  if (branch && branch.length > maxBranchLen) {
     branch = `${branch.slice(0, Math.max(4, maxBranchLen - 1))}…`;
   }
-  const dirtyMark = show.gitDirty && git.dirty ? fg('*', palette.warn, color) : '';
-  return `${fg('git:', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}`;
+  const dirtyMark = branch && show.gitDirty && git?.dirty ? fg('*', palette.warn, color) : '';
+
+  if (dirName && branch) {
+    return `${fg(dirName, palette.text, color)} ${fg('(', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}${fg(')', palette.muted, color)}`;
+  }
+  if (branch) {
+    return `${fg('git:', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}`;
+  }
+  if (dirName) {
+    return fg(dirName, palette.text, color);
+  }
+  return '';
 }
 
 function renderMetaLine(payload, width, config, palette, color, git) {
   const { show } = config;
   const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
   const hintText = show.hint ? (isBusy ? 'esc to cancel' : '? for shortcuts') : '';
+  const vimBadge = formatVimBadge(payload, show, palette, color);
   const rightText = show.model ? formatModelName(payload?.model, show.effort) : '';
   const right = rightText ? fg(rightText, palette.muted, color) : '';
 
-  const gitFull = formatGitSegment(git, show, palette, color, 26);
-  const gitShort = formatGitSegment(git, show, palette, color, 14);
+  const wsFull = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 24 });
+  const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 12 });
+  const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: false, maxBranchLen: 14 });
+  const hintSeg = hintText ? fg(hintText, palette.muted, color) : '';
 
   const candidates = [
-    () => joinWithSep([hintText ? fg(hintText, palette.muted, color) : '', gitFull], ' · ', palette, color),
-    () => joinWithSep([hintText ? fg(hintText, palette.muted, color) : '', gitShort], ' · ', palette, color),
-    () => gitShort || (hintText ? fg(hintText, palette.muted, color) : ''),
+    () => joinWithSep([vimBadge, hintSeg, wsFull], ' · ', palette, color),
+    () => joinWithSep([vimBadge, hintSeg, wsShort], ' · ', palette, color),
+    () => joinWithSep([vimBadge, wsShort || gitOnly || hintSeg], ' · ', palette, color),
+    () => vimBadge || gitOnly || hintSeg,
     () => '',
   ];
 
@@ -194,12 +246,13 @@ function computeCachePercent(context) {
 
 function buildContextSegment(payload, opts, config, palette, color, telemetry) {
   const context = payload?.context_window || {};
-  const { show, barStyle, barWidth } = config;
+  const { show, barStyle, barWidth, colorMode } = config;
   if (!show.context) return '';
   const { warn: contextWarn, danger: contextDanger } = resolveContextThresholds(payload?.model, config);
   const pct = nonNegNumber(context?.used_percentage);
   const size = nonNegNumber(context?.context_window_size);
   const pctText = pct === null ? '--' : `${pct.toFixed(1)}%`;
+  const healthyColor = colorMode === 'distinct' ? palette.accent : palette.good;
   const tone =
     pct === null
       ? palette.muted
@@ -207,7 +260,7 @@ function buildContextSegment(payload, opts, config, palette, color, telemetry) {
         ? palette.danger
         : pct >= contextWarn
           ? palette.warn
-          : palette.accent;
+          : healthyColor;
 
   const pieces = [];
   pieces.push(fg(opts.shortLabel ? 'C' : 'CTX', palette.muted, color));
@@ -227,6 +280,9 @@ function buildContextSegment(payload, opts, config, palette, color, telemetry) {
   }
   if (opts.withCapacity && show.capacity && size !== null && size > 0) {
     pieces.push(fg(`(${formatTokens(size)})`, palette.muted, color));
+  }
+  if (opts.withCompactHint && show.compactHint && pct !== null && pct >= contextDanger) {
+    pieces.push(bold(fg('→/compact', palette.danger, color), color));
   }
   return pieces.join(' ');
 }
@@ -255,6 +311,24 @@ function buildSpeedSegment(opts, config, palette, color, telemetry) {
   const label = `${Math.round(rate)}t/s`;
   const tone = rate >= 60 ? palette.accent : rate >= 25 ? palette.text : palette.warn;
   return fg(label, tone, color);
+}
+
+function buildCostSegment(opts, config, palette, color, telemetry) {
+  if (!opts.withCost || !config.show.cost) return '';
+  const cost = nonNegNumber(telemetry?.sessionCostUsd);
+  if (cost === null || cost <= 0) return '';
+  return fg(`~${formatUsd(cost)}`, palette.muted, color);
+}
+
+function buildSessionSegment(opts, config, palette, color, telemetry) {
+  if (!opts.withSession || !config.show.session) return '';
+  const turns = nonNegNumber(telemetry?.sessionTurns);
+  const dur = nonNegNumber(telemetry?.sessionDurationSec);
+  const parts = [];
+  if (dur !== null && dur > 0) parts.push(formatDurationShort(dur));
+  if (turns !== null && turns > 0) parts.push(`${turns}t`);
+  if (!parts.length) return '';
+  return fg(parts.join('·'), palette.muted, color);
 }
 
 function buildQuotaSegment(entries, opts, config, palette, color, now) {
@@ -303,26 +377,31 @@ function renderMetricsRow(payload, width, config, palette, color, now, { include
   const sep = ' │ ';
 
   const stages = [
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: true, withDelta: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: false, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: false, shortLabel: true, tight: true },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: true, withCost: true, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: true, withCost: false, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
   ];
 
   let chosenLeft = '';
   let chosenRight = '';
   for (const stage of stages) {
     const leftParts = [];
-    if (stage.withPrefix && config.show.model) {
-      leftParts.push(fg(formatModelName(payload?.model, config.show.effort), palette.text, color));
+    if (stage.withPrefix) {
+      const vimBadge = formatVimBadge(payload, config.show, palette, color);
+      if (vimBadge) leftParts.push(vimBadge);
+      if (config.show.model) {
+        leftParts.push(fg(formatModelName(payload?.model, config.show.effort), palette.text, color));
+      }
     }
     if (stage.withGit) {
-      const gitSeg = formatGitSegment(git, config.show, palette, color, 16);
+      const gitSeg = formatWorkspaceGitSegment(payload, git, config.show, palette, color, { withDir: false, maxBranchLen: 16 });
       if (gitSeg) leftParts.push(gitSeg);
     }
     const ctxSeg = buildContextSegment(payload, stage, config, palette, color, telemetry);
@@ -331,6 +410,10 @@ function renderMetricsRow(payload, width, config, palette, color, now, { include
     if (cacheSeg) leftParts.push(cacheSeg);
     const speedSeg = buildSpeedSegment(stage, config, palette, color, telemetry);
     if (speedSeg) leftParts.push(speedSeg);
+    const costSeg = buildCostSegment(stage, config, palette, color, telemetry);
+    if (costSeg) leftParts.push(costSeg);
+    const sessionSeg = buildSessionSegment(stage, config, palette, color, telemetry);
+    if (sessionSeg) leftParts.push(sessionSeg);
 
     const left = joinWithSep(leftParts, stage.tight ? ' ' : sep, palette, color);
     const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
@@ -392,7 +475,7 @@ export function renderStatusline(
   }
 
   const lines = [];
-  if (cfg.show.hint || cfg.show.model || cfg.show.git) {
+  if (cfg.show.hint || cfg.show.vim || cfg.show.dir || cfg.show.model || cfg.show.git) {
     const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git);
     if (meta) lines.push(meta);
   }

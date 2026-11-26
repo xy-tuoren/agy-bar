@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { sanitizeText } from './ansi.mjs';
 import { configDir } from './config.mjs';
+import { estimateCost } from './pricing.mjs';
 
 const BUSY_STATES = new Set(['working', 'tool_use', 'thinking']);
 
@@ -17,6 +18,82 @@ export function sessionsDir(baseDir = configDir(homedir())) {
 
 export function ledgerPath(baseDir = configDir(homedir())) {
   return join(baseDir, 'ledger.jsonl');
+}
+
+export function captureSentinelPath(baseDir = configDir(homedir())) {
+  return join(baseDir, '.capture-once');
+}
+
+export function capturedPayloadPath(baseDir = configDir(homedir())) {
+  return join(baseDir, 'last-payload.redacted.json');
+}
+
+export function redactPayload(payload, home = homedir()) {
+  const seen = new WeakSet();
+  const redactString = (value, keyName = '') => {
+    const lowerKey = keyName.toLowerCase();
+    if (lowerKey.includes('email')) return '***@***';
+    if (lowerKey.includes('token') && !lowerKey.includes('tokens')) return '[REDACTED]';
+    if (lowerKey === 'conversation_id' || lowerKey === 'session_id') {
+      return value.length > 8 ? `${value.slice(0, 8)}…` : value;
+    }
+    if (lowerKey === 'conversation_title') {
+      return value ? `[TITLE len=${value.length}]` : value;
+    }
+    let out = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '***@***');
+    if (home && out.includes(home)) {
+      out = out.split(home).join('~');
+    }
+    return out;
+  };
+
+  const walk = (node, keyName = '') => {
+    if (typeof node === 'string') return redactString(node, keyName);
+    if (!node || typeof node !== 'object') return node;
+    if (seen.has(node)) return '[Circular]';
+    seen.add(node);
+    if (Array.isArray(node)) return node.map((item) => walk(item, keyName));
+    const out = {};
+    for (const [k, v] of Object.entries(node)) {
+      out[k] = walk(v, k);
+    }
+    return out;
+  };
+
+  return walk(payload);
+}
+
+export function armPayloadCapture({ baseDir = configDir(homedir()) } = {}) {
+  mkdirSync(baseDir, { recursive: true });
+  const sentinel = captureSentinelPath(baseDir);
+  writeFileSync(sentinel, `${Date.now()}\n`, 'utf8');
+  return { sentinel, target: capturedPayloadPath(baseDir) };
+}
+
+export function maybeCaptureRedactedPayload(payload, { baseDir = configDir(homedir()), home = homedir(), now = Date.now() } = {}) {
+  const sentinel = captureSentinelPath(baseDir);
+  if (!existsSync(sentinel)) return false;
+  try {
+    const redacted = {
+      capturedAt: new Date(now).toISOString(),
+      payload: redactPayload(payload, home),
+    };
+    writeFileSync(capturedPayloadPath(baseDir), JSON.stringify(redacted, null, 2) + '\n', 'utf8');
+    rmSync(sentinel, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readCapturedPayload({ baseDir = configDir(homedir()) } = {}) {
+  const target = capturedPayloadPath(baseDir);
+  if (!existsSync(target)) return null;
+  try {
+    return JSON.parse(readFileSync(target, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 export function deriveSessionId(payload) {
@@ -102,7 +179,6 @@ export function recordTelemetry(
     turnStartedAt = now;
   }
 
-  // Track output & usage changes for turn speed + cache TTL + ledger.
   const prevTotalOut = nonNeg(prev?.totalOut);
   const prevTotalIn = nonNeg(prev?.totalIn);
   const prevUsedPct = nonNeg(prev?.usedPct);
@@ -122,6 +198,11 @@ export function recordTelemetry(
   const usageSignature = usage ? `${curIn}:${curOut}:${curCacheRead}:${curCacheWrite}` : null;
   const usageChanged = Boolean(usageSignature && prev && prev.usageSignature !== usageSignature);
 
+  const startedAt = nonNeg(prev?.startedAt) ?? now;
+  let sessionTurns = nonNeg(prev?.sessionTurns) ?? 0;
+  let sessionCostUsd = nonNeg(prev?.sessionCostUsd) ?? 0;
+  let sessionCacheSavedUsd = nonNeg(prev?.sessionCacheSavedUsd) ?? 0;
+
   let lastActivityAt = nonNeg(prev?.lastActivityAt);
   let lastSpeedTokPerSec = nonNeg(prev?.lastSpeedTokPerSec);
   let lastTurnDurationMs = nonNeg(prev?.lastTurnDurationMs);
@@ -133,7 +214,10 @@ export function recordTelemetry(
     lastActivityAt = now;
   }
 
+  const modelName = normalizeModelName(p.model);
+
   if (outDelta > 0) {
+    sessionTurns += 1;
     let durationMs = null;
     if (turnStartedAt !== null && now > turnStartedAt && now - turnStartedAt <= 600_000) {
       durationMs = now - turnStartedAt;
@@ -156,16 +240,28 @@ export function recordTelemetry(
       lastContextDelta = inDelta + outDelta;
     }
 
+    const billedInput = inDelta > 0 ? inDelta : curIn;
+    const est = estimateCost({
+      model: modelName,
+      input: billedInput,
+      output: outDelta,
+      cacheRead: curCacheRead,
+      cacheWrite: curCacheWrite,
+    });
+    if (est.priced) {
+      sessionCostUsd = Math.round((sessionCostUsd + est.costUsd) * 1_000_000) / 1_000_000;
+      sessionCacheSavedUsd = Math.round((sessionCacheSavedUsd + est.cacheSavedUsd) * 1_000_000) / 1_000_000;
+    }
+
     if (enableLedger) {
       try {
         mkdirSync(baseDir, { recursive: true });
-        const modelName = normalizeModelName(p.model);
         const entry = {
           ts: now,
           session: sessionId.slice(0, 16),
           model: modelName,
           effort: sanitizeText(p.model?.effort || '') || null,
-          input: inDelta > 0 ? inDelta : curIn,
+          input: billedInput,
           output: outDelta,
           cacheRead: curCacheRead,
           cacheWrite: curCacheWrite,
@@ -196,6 +292,7 @@ export function recordTelemetry(
 
   const nextState = {
     sessionId,
+    startedAt,
     updatedAt: now,
     cwd,
     workspaceName: cwd ? basename(cwd) : prev?.workspaceName || null,
@@ -203,7 +300,7 @@ export function recordTelemetry(
     dirty: typeof git?.dirty === 'boolean' ? git.dirty : Boolean(prev?.dirty),
     agentState: sanitizeText(p.agent_state || '') || 'idle',
     isBusy,
-    model: normalizeModelName(p.model),
+    model: modelName,
     effort: sanitizeText(p.model?.effort || '') || null,
     usedPct,
     windowSize,
@@ -216,6 +313,9 @@ export function recordTelemetry(
     lastSpeedTokPerSec,
     lastTurnDurationMs,
     lastContextDelta,
+    sessionTurns,
+    sessionCostUsd,
+    sessionCacheSavedUsd,
     quota: pickQuotaSnapshot(p.quota) || prev?.quota || null,
   };
 
@@ -233,6 +333,10 @@ export function recordTelemetry(
     speedTokPerSec: lastSpeedTokPerSec,
     turnDurationMs: lastTurnDurationMs,
     contextDelta: lastContextDelta,
+    sessionTurns,
+    sessionCostUsd,
+    sessionCacheSavedUsd,
+    sessionDurationSec: Math.max(0, Math.round((now - startedAt) / 1000)),
     lastActivityAt,
   };
 }

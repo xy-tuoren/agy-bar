@@ -24,10 +24,60 @@ test('formatTokens and formatReset produce concise readable labels', () => {
   assert.equal(formatReset({ reset_in_seconds: 273600 }), '3d4h');
 });
 
-test('renderBar supports blocks, line, and ascii styles', () => {
+test('renderBar supports smooth, blocks, line, and ascii styles', () => {
   assert.equal(renderBar(0.5, { width: 6, style: 'blocks', color: false }), '███░░░');
   assert.equal(renderBar(0.5, { width: 6, style: 'line', color: false }), '━━━───');
   assert.equal(renderBar(0.5, { width: 6, style: 'ascii', color: false }), '[###---]');
+  // 42.6% of 8 cells = 27.26 eighths -> 3 full blocks + ▍ (3/8) + 4 empty
+  assert.equal(renderBar(0.426, { width: 8, style: 'smooth', color: false }), '███▍░░░░');
+  assert.equal(visibleWidth(renderBar(0.426, { width: 8, style: 'smooth', color: true })), 8);
+});
+
+test('health colorMode unifies healthy CTX bar color with right-side quota green, distinct uses accent blue', () => {
+  const healthOut = renderStatusline(fixtures.geminiNormal, {
+    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', colorMode: 'health' }),
+    color: true,
+  });
+  const metricsLine = healthOut.split('\n')[1];
+  // slate-dark good green is 52;211;153; accent blue is 56;189;248.
+  assert.ok(metricsLine.includes('\x1b[38;2;52;211;153m███'));
+  assert.ok(!metricsLine.includes('\x1b[38;2;56;189;248m███'));
+
+  const distinctOut = renderStatusline(fixtures.geminiNormal, {
+    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', colorMode: 'distinct' }),
+    color: true,
+  });
+  assert.ok(distinctOut.split('\n')[1].includes('\x1b[38;2;56;189;248m███'));
+});
+
+test('renders workspace dir + git, Vim badge, /compact danger hint, and optional cost/session metrics', () => {
+  const payload = {
+    ...fixtures.geminiCritical,
+    terminal_width: 132,
+    workspace: { current_dir: '/Users/dev/agy-bar' },
+    vim: { mode: 'NORMAL' },
+  };
+  const out = renderStatusline(payload, {
+    config: normalizeConfig({
+      preset: 'dashboard',
+      theme: 'slate-dark',
+      show: { cost: true, session: true, compactHint: true },
+    }),
+    color: false,
+    git: { branch: 'feat/v3', dirty: true },
+    telemetry: {
+      cacheRemainingSec: 18,
+      speedTokPerSec: 92,
+      sessionCostUsd: 0.42,
+      sessionTurns: 8,
+      sessionDurationSec: 720,
+    },
+  });
+  const [line1, line2] = out.split('\n');
+  assert.match(line1, /\[NORMAL\] · esc to cancel · agy-bar \(feat\/v3\*\)/);
+  assert.match(line2, /92\.4% \(1\.0M\) →\/compact/);
+  assert.match(line2, /~\$0\.42/);
+  assert.match(line2, /12m·8t/);
 });
 
 test('dashboard preset renders 2 lines with git, context bar, cache, and Gemini quota', () => {
@@ -125,10 +175,10 @@ test('handles empty or initial payloads without throwing', () => {
 test('buildPreviewOutput applies overridden preset cleanly without leaking dashboard toggles', () => {
   const compactPreview = buildPreviewOutput({ scenario: 'normal', preset: 'compact', width: 96, color: false });
   assert.ok(!compactPreview.includes('CACHE'));
-  assert.match(compactPreview, /Gemini 4 Carbon │ git:main │ CTX/);
+  assert.match(compactPreview, /Gemini 4 Neon │ git:main │ CTX/);
 
   const minimalPreview = buildPreviewOutput({ scenario: 'normal', preset: 'minimal', width: 80, color: false });
-  assert.ok(!minimalPreview.includes('Gemini 4 Carbon'));
+  assert.ok(!minimalPreview.includes('Gemini 4 Neon'));
   assert.ok(!minimalPreview.includes('CACHE'));
   assert.match(minimalPreview, /CTX 42\.6% \(1\.0M\)/);
 });
