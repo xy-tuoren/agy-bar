@@ -255,42 +255,59 @@ export function uninstallAgyBar({
   const settingsPath = agySettingsPath(home);
   const backupPath = backupFilePath(home);
   const appDir = installedAppDir(home);
+  const cfgDir = configDir(home);
 
-  if (!existsSync(backupPath)) {
-    return {
-      uninstalled: false,
-      message: 'agy-bar is not currently installed.',
-    };
-  }
-
-  const backup = readJson(backupPath);
+  const hadBackup = existsSync(backupPath);
+  const hadApp = existsSync(appDir);
+  const hadCfgDir = existsSync(cfgDir);
   let restored = false;
 
-  if (existsSync(settingsPath)) {
-    const settings = readJson(settingsPath);
-    if (settings.statusLine?.command === backup.installedCommand) {
-      if (backup.hadStatusLine) {
-        settings.statusLine = backup.statusLine;
-      } else {
-        delete settings.statusLine;
+  if (hadBackup) {
+    const backup = readJson(backupPath);
+    if (existsSync(settingsPath)) {
+      const settings = readJson(settingsPath);
+      if (settings.statusLine?.command === backup.installedCommand) {
+        if (backup.hadStatusLine) {
+          settings.statusLine = backup.statusLine;
+        } else {
+          delete settings.statusLine;
+        }
+        writeJson(settingsPath, settings);
+        restored = true;
       }
-      writeJson(settingsPath, settings);
-      restored = true;
     }
+    rmSync(backupPath, { force: true, maxRetries: 3, retryDelay: 50 });
   }
 
   const shimRemoved = uninstallCliShim({ home, platform });
   const hookResult = uninstallShellHook({ home, platform, env });
-  rmSync(appDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
-  rmSync(backupPath, { force: true, maxRetries: 3, retryDelay: 50 });
+  if (hadApp) {
+    rmSync(appDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
 
   let skillResult = null;
   if (removeSkill) {
     skillResult = uninstallSkill({ home });
   }
 
-  if (purge) {
-    rmSync(configDir(home), { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  if (purge && hadCfgDir) {
+    rmSync(cfgDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+
+  const removedAnything = Boolean(
+    hadBackup || hadApp || shimRemoved || hookResult.removed || skillResult?.removed || (purge && hadCfgDir),
+  );
+  if (!removedAnything) {
+    return {
+      uninstalled: false,
+      restored: false,
+      shimRemoved: false,
+      shellHookRemoved: false,
+      shellHookPaths: [],
+      skillRemoved: false,
+      purged: false,
+      message: 'agy-bar is not currently installed.',
+    };
   }
 
   return {
@@ -300,10 +317,12 @@ export function uninstallAgyBar({
     shellHookRemoved: hookResult.removed,
     shellHookPaths: hookResult.rcPaths,
     skillRemoved: Boolean(skillResult?.removed),
-    purged: purge,
+    purged: purge && hadCfgDir,
     message: restored
       ? 'Removed agy-bar and restored your previous statusLine setting. Restart agy.'
-      : 'Removed agy-bar files (kept your current statusLine since it pointed to another renderer). Restart agy.',
+      : hadBackup
+        ? 'Removed agy-bar files (kept your current statusLine since it pointed to another renderer). Restart agy.'
+        : 'Cleaned up remaining agy-bar files and shell hooks.',
   };
 }
 

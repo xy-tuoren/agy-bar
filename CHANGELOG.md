@@ -11,6 +11,9 @@ All notable changes to **agy-bar** are documented here.
   - Added zero-dependency proxy-aware HTTPS sync (`models.dev/api.json` primary with automatic `LiteLLM` fallback, `gzip`, `ETag` `304`, sanity bounds, and atomic writes; works without TUN via local HTTP CONNECT proxy).
   - Enabled non-blocking 24h background Stale-While-Revalidate (`pricingAutoSync: true`, single-flight 6h failure backoff; opt out anytime via `agy-bar config set pricingAutoSync off`).
   - Added `agy-bar pricing show | sync | set | reset` CLI commands.
+- **Subagent Cost Rollup & Complete Uninstall Env Cleanup (`src/history-scan.mjs`, `src/proxy.mjs`, `src/installer.mjs`)**:
+  - Rolls up spawned subagent (and nested descendant) token spend into the parent conversation's live `~$...` cost via read-only `conversation_summaries.db` parent ID links (zero chat text read, zero double-counting of daily totals), automatically tightening usage summary refresh to `20s` while subagents are running (`⚡N`).
+  - Made `agy-bar uninstall` clean orphan shell hooks/shims even when backup metadata is absent, print exact shell-specific unset commands for the active terminal, and support `eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"` for one-shot disk + live-shell env cleanup.
 - **Compact `~` Workspace Paths & Live Git Diff Line Counts (`dirStyle`, `show.gitDiff`)**:
   - Top-left workspace display now defaults to a clean home-abbreviated path (`~/code`, `~/code/agy-bar`, or `~/…/client/agy-bar` for deep directories), automatically falling back to folder name on narrow split panes.
   - Displays live green/red workspace diff stats (`+142 -38`) right beside the Git branch (covering tracked staged/unstaged changes via `git diff --numstat HEAD` plus new untracked non-binary text files, sharing the 3s session cache and hidden automatically when clean).

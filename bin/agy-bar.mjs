@@ -12,7 +12,13 @@ import {
   saveConfig,
   TAB_TITLE_SOURCES,
 } from '../src/config.mjs';
-import { computeUsageSummary, saveUsageSummary, scanConversationHistory, usageSummaryPath } from '../src/history-scan.mjs';
+import {
+  computeUsageSummary,
+  readConversationParentMap,
+  saveUsageSummary,
+  scanConversationHistory,
+  usageSummaryPath,
+} from '../src/history-scan.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
@@ -30,11 +36,13 @@ import {
   syncPricingCache,
 } from '../src/pricing-sync.mjs';
 import {
+  AGY_BAR_CLEANUP_ENV_VARS,
   checkLocalPort,
   COMMON_LOCAL_PROXY_PORTS,
   DEFAULT_PROXY_BYPASS,
   DEFAULT_PROXY_CONFIG,
   detectLocalProxy,
+  formatShellCleanup,
   formatShellExports,
   launchAgyWithProxy,
   normalizeBypassList,
@@ -46,6 +54,7 @@ import {
 } from '../src/proxy.mjs';
 import { detectModelGroup, selectQuotaEntries } from '../src/render.mjs';
 import {
+  detectShell,
   formatShellHookPrompt,
   inspectShellHook,
   installShellHook,
@@ -97,9 +106,10 @@ export const HELP_TEXT = [
   '    env [--sh|--fish|--pwsh] Print shell export commands (e.g. eval "$(agy-bar proxy env)")',
   '    clear                 Reset proxy settings back to default auto-detect mode',
   '',
-  '  uninstall [options]     Remove agy-bar and restore previous statusLine setting',
+  '  uninstall [options]     Remove agy-bar, shell hook & restore previous statusLine setting',
   '    --remove-skill        Also remove the managed /agy-bar skill',
   '    --purge               Also remove ~/.gemini/config/agy-bar/config.json & telemetry',
+  '    --print-cleanup       Print shell unset commands for current terminal (use with eval)',
   '',
   '  config <subcommand>     Inspect or update display preferences',
   '    show                  Print effective configuration as JSON',
@@ -169,6 +179,7 @@ function parseFlags(args) {
     else if (arg === '--yes' || arg === '-y') flags.yes = true;
     else if (arg === '--remove-skill') flags.removeSkill = true;
     else if (arg === '--purge') flags.purge = true;
+    else if (arg === '--print-cleanup') flags.printCleanup = true;
     else if (arg === '--plain') flags.plain = true;
     else if (arg === '--json') flags.json = true;
     else if (arg === '--once') flags.once = true;
@@ -305,7 +316,28 @@ export async function main(argv = process.argv.slice(2)) {
       removeSkill: Boolean(flags.removeSkill),
       purge: Boolean(flags.purge),
     });
+    const rawShell = flags.shell || detectShell();
+    const cleanupShell = rawShell === 'fish' ? 'fish' : rawShell === 'pwsh' ? 'pwsh' : 'sh';
+    const cleanupCmd = formatShellCleanup({ shell: cleanupShell, includeUnsetFunc: true });
+    const hasProxyEnvInShell = AGY_BAR_CLEANUP_ENV_VARS.some((k) => Boolean(process.env[k]));
+
+    if (flags.printCleanup) {
+      process.stderr.write(`${result.message}\n`);
+      if (result.shellHookPaths?.length) {
+        process.stderr.write(`Removed managed shell hook from: ${result.shellHookPaths.join(', ')}\n`);
+      }
+      console.log(cleanupCmd);
+      return;
+    }
+
     console.log(result.message);
+    if (result.shellHookPaths?.length) {
+      console.log(`Removed managed shell hook from: ${result.shellHookPaths.join(', ')}`);
+    }
+    if (result.shellHookRemoved || hasProxyEnvInShell) {
+      console.log('To clear proxy env vars & agy() function in this already-open terminal immediately, run:');
+      console.log(`  ${cleanupCmd}`);
+    }
     return;
   }
 
@@ -350,7 +382,8 @@ export async function main(argv = process.argv.slice(2)) {
         entries = scan.entries;
         sourceLabel = source === 'all' ? 'cli+desktop' : source;
         if (source === 'all') {
-          saveUsageSummary(computeUsageSummary(scan.entries));
+          const parentMap = await readConversationParentMap();
+          saveUsageSummary(computeUsageSummary(scan.entries, { parentMap }));
         }
       } else {
         entries = readLedger();

@@ -86,13 +86,94 @@ function localDateKey(ts) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function computeUsageSummary(entries, { now = Date.now() } = {}) {
+function normalizeParentMap(parentMap) {
+  const map = new Map();
+  if (!parentMap) return map;
+  const entries = parentMap instanceof Map ? parentMap.entries() : Object.entries(parentMap);
+  for (const [child, parent] of entries) {
+    const c = child ? String(child).trim().slice(0, 16) : '';
+    const p = parent ? String(parent).trim().slice(0, 16) : '';
+    if (c && p && c !== p) map.set(c, p);
+  }
+  return map;
+}
+
+export async function readConversationParentMap({ home = homedir(), dbPaths = null } = {}) {
+  const map = new Map();
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import('node:sqlite'));
+  } catch {
+    return map;
+  }
+
+  const targets = dbPaths || [
+    join(home, '.gemini', 'antigravity-cli', 'conversation_summaries.db'),
+    join(home, '.gemini', 'antigravity', 'conversation_summaries.db'),
+  ];
+
+  for (const dbPath of targets) {
+    if (!existsSync(dbPath)) continue;
+    let db;
+    try {
+      db = new DatabaseSync(dbPath, { readOnly: true });
+      // Read ONLY conversation ID parent links (never reads titles, previews, or chat text).
+      try {
+        const rows = db
+          .prepare("SELECT conversation_id, parent_conversation_id FROM conversation_summaries WHERE parent_conversation_id IS NOT NULL AND parent_conversation_id != ''")
+          .all();
+        for (const r of rows) {
+          const c = r?.conversation_id ? String(r.conversation_id).trim().slice(0, 16) : '';
+          const p = r?.parent_conversation_id ? String(r.parent_conversation_id).trim().slice(0, 16) : '';
+          if (c && p && c !== p) map.set(c, p);
+        }
+      } catch {
+        // Ignore if table/column does not exist in this AGY version.
+      }
+      try {
+        const rows = db.prepare('SELECT conversation_id, parent_id FROM conversation_parents').all();
+        for (const r of rows) {
+          const c = r?.conversation_id ? String(r.conversation_id).trim().slice(0, 16) : '';
+          const p = r?.parent_id ? String(r.parent_id).trim().slice(0, 16) : '';
+          if (c && p && c !== p && !map.has(c)) map.set(c, p);
+        }
+      } catch {
+        // Ignore if table does not exist.
+      }
+    } catch {
+      // Skip locked or unreadable summary DBs cleanly.
+    } finally {
+      try {
+        db?.close();
+      } catch {
+        // Ignore close errors.
+      }
+    }
+  }
+
+  return map;
+}
+
+export function computeUsageSummary(entries, { now = Date.now(), parentMap = null } = {}) {
   const nowDate = new Date(now);
   const todayKey = localDateKey(now);
   const todayStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
   const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
   const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
   const recentCutoff = now - 48 * 60 * 60 * 1000;
+  const parents = normalizeParentMap(parentMap);
+
+  const sessionLineage = (sid) => {
+    const chain = [];
+    const seen = new Set();
+    let cur = sid;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      chain.push(cur);
+      cur = parents.get(cur) || null;
+    }
+    return chain;
+  };
 
   let todayTokens = 0;
   let weekTokens = 0;
@@ -114,14 +195,17 @@ export function computeUsageSummary(entries, { now = Date.now() } = {}) {
     }
 
     const sid = e.session ? String(e.session).slice(0, 16) : null;
-    if (sid && typeof e.ts === 'number' && e.ts >= recentCutoff) {
-      recentSessions.add(sid);
+    const lineage = sid ? sessionLineage(sid) : [];
+    if (lineage.length > 0 && typeof e.ts === 'number' && e.ts >= recentCutoff) {
+      for (const id of lineage) recentSessions.add(id);
     }
 
     const est = estimateCost(e);
     if (est.priced && est.costUsd > 0) {
       if (isToday) todayCostUsd += est.costUsd;
-      if (sid) sessionCosts.set(sid, (sessionCosts.get(sid) || 0) + est.costUsd);
+      for (const id of lineage) {
+        sessionCosts.set(id, (sessionCosts.get(id) || 0) + est.costUsd);
+      }
     }
   }
 
@@ -194,14 +278,17 @@ export async function getOrRefreshUsageSummary({
   sessionId = null,
   deltaTokens = 0,
   deltaCostUsd = 0,
+  hasRunningSubagents = false,
   allowScan = true,
   fallbackEntries = null,
+  parentMap = null,
 } = {}) {
   const todayKey = localDateKey(now);
   const existing = readUsageSummary({ baseDir });
   const shortSid = sessionId ? String(sessionId).slice(0, 16) : null;
+  const effectiveMaxAgeMs = hasRunningSubagents ? Math.min(maxAgeMs, 20_000) : maxAgeMs;
 
-  if (existing && existing.date === todayKey && typeof existing.updatedAt === 'number' && now - existing.updatedAt < maxAgeMs) {
+  if (existing && existing.date === todayKey && typeof existing.updatedAt === 'number' && now - existing.updatedAt < effectiveMaxAgeMs) {
     if (deltaTokens > 0 || deltaCostUsd > 0) {
       const nextRecent = { ...(existing.recentSessionCosts || {}) };
       if (shortSid && deltaCostUsd > 0) {
@@ -224,13 +311,14 @@ export async function getOrRefreshUsageSummary({
   if (allowScan) {
     const scan = await scanConversationHistory({ home, baseDir, sourceFilter: 'all', useCache: true });
     if (scan.supported && scan.entries.length > 0) {
-      const summary = computeUsageSummary(scan.entries, { now });
+      const resolvedParents = parentMap || (await readConversationParentMap({ home }));
+      const summary = computeUsageSummary(scan.entries, { now, parentMap: resolvedParents });
       return attachSessionCost(saveUsageSummary(summary, { baseDir }), sessionId);
     }
   }
 
   if (Array.isArray(fallbackEntries) && fallbackEntries.length > 0) {
-    const summary = computeUsageSummary(fallbackEntries, { now });
+    const summary = computeUsageSummary(fallbackEntries, { now, parentMap });
     return attachSessionCost(saveUsageSummary(summary, { baseDir }), sessionId);
   }
 

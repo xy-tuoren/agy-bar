@@ -600,6 +600,39 @@ export function formatShellExports(resolved, { shell = 'sh' } = {}) {
   return vars.map(([k, v]) => `export ${k}=${q(v)}`).join('\n');
 }
 
+export const AGY_BAR_CLEANUP_ENV_VARS = Object.freeze([
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'no_proxy',
+  'AGY_BAR_NO_PROXY',
+  'AGY_BAR_PROXY_WRAPPER',
+]);
+
+export function formatShellCleanup({ shell = 'sh', includeUnsetFunc = true } = {}) {
+  if (shell === 'pwsh') {
+    const envList = AGY_BAR_CLEANUP_ENV_VARS.map((k) => `Env:${k}`).join(',');
+    const lines = [];
+    if (includeUnsetFunc) lines.push('Remove-Item Function:\\agy -ErrorAction SilentlyContinue');
+    lines.push(`Remove-Item ${envList} -ErrorAction SilentlyContinue`);
+    return lines.join('\n');
+  }
+  if (shell === 'fish') {
+    const lines = [];
+    if (includeUnsetFunc) lines.push('functions -e agy');
+    lines.push(`set -e ${AGY_BAR_CLEANUP_ENV_VARS.join(' ')}`);
+    return lines.join('; ');
+  }
+  const lines = [];
+  if (includeUnsetFunc) lines.push('unset -f agy 2>/dev/null || true');
+  lines.push(`unset ${AGY_BAR_CLEANUP_ENV_VARS.join(' ')}`);
+  return lines.join('; ');
+}
+
 export function parseRunArgs(args = []) {
   const options = {
     proxyUrl: null,

@@ -5,6 +5,7 @@ import {
   buildProxyEnv,
   checkLocalPort,
   detectLocalProxy,
+  formatShellCleanup,
   formatShellExports,
   launchAgyWithProxy,
   normalizeProxyConfig,
@@ -276,4 +277,18 @@ test('resolveSpawnTarget resolves Windows .exe and .cmd shims cleanly', () => {
   });
   assert.equal(exeHit.shell, false);
   assert.match(exeHit.command, /agy\.exe$/);
+});
+
+test('formatShellCleanup generates unset commands for sh, fish, and PowerShell', () => {
+  const sh = formatShellCleanup({ shell: 'sh' });
+  assert.match(sh, /unset -f agy/);
+  assert.match(sh, /unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY/);
+
+  const fish = formatShellCleanup({ shell: 'fish' });
+  assert.match(fish, /functions -e agy/);
+  assert.match(fish, /set -e HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY/);
+
+  const pwsh = formatShellCleanup({ shell: 'pwsh' });
+  assert.match(pwsh, /Remove-Item Function:\\agy/);
+  assert.match(pwsh, /Remove-Item Env:HTTP_PROXY,Env:HTTPS_PROXY/);
 });

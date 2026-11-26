@@ -5,7 +5,7 @@ import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { getOrRefreshUsageSummary } from './history-scan.mjs';
 import { maybeTriggerBackgroundPricingSync } from './pricing-sync.mjs';
-import { renderFallback, renderStatusline } from './render.mjs';
+import { countRunningSubagents, renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
 import { maybeCaptureRedactedPayload, peekSessionState, recordTelemetry, updateSessionTabTitle } from './telemetry.mjs';
@@ -75,6 +75,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
         sessionId: telemetry.sessionId,
         deltaTokens: telemetry.turnTokensDelta || 0,
         deltaCostUsd: telemetry.turnCostDeltaUsd || 0,
+        hasRunningSubagents: countRunningSubagents(payload) > 0,
         allowScan: config.dbTiming,
       });
     }

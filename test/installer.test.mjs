@@ -215,3 +215,21 @@ test('Windows install and runDoctor recognize Base64-encoded statusLine command'
     rmSync(fakeHome, { recursive: true, force: true });
   }
 });
+
+test('uninstallAgyBar cleans orphan shell hooks even when backup file is absent', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-orphan-uninstall-'));
+  try {
+    const zshrc = join(fakeHome, '.zshrc');
+    writeFileSync(
+      zshrc,
+      '# existing\n# >>> agy-bar proxy >>>\nagy() { command agy "$@"; }\n# <<< agy-bar proxy <<<\n',
+      'utf8',
+    );
+    const res = uninstallAgyBar({ home: fakeHome, platform: 'darwin', env: { SHELL: '/bin/zsh' } });
+    assert.equal(res.uninstalled, true);
+    assert.equal(res.shellHookRemoved, true);
+    assert.ok(!readFileSync(zshrc, 'utf8').includes('# >>> agy-bar proxy >>>'));
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});

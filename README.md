@@ -36,7 +36,7 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 | --- | --- | --- |
 | **Line 1 · Left** | `~/code/agy-bar (main* +142 -38) · PX 7897` | Compact `~` path (`dirStyle`), live Git diff lines (tracked + untracked text, 3s cache), active proxy port badge, plus on-demand busy badges (`● 34s · esc`, `⚡2` subagents, `PLAN` / `SANDBOX`, Vim `[NORMAL]`) |
 | **Line 1 · Right** | `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M │ Model` | Calm neutral cumulative token/spend strip + active model & reasoning effort; sheds gracefully on narrow split panes |
-| **Line 2 · Left** | `CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·158t/s │ ~$0.18` | Unified health context gauge (`→/compact` at danger), 5-min prompt cache TTL countdown, exact first-token latency + streaming decode speed, and live conversation spend |
+| **Line 2 · Left** | `CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·158t/s │ ~$0.18` | Unified health context gauge (`→/compact` at danger), 5-min prompt cache TTL countdown, exact first-token latency + streaming decode speed, and live conversation spend (rolls up nested subagent costs automatically, refreshing every 20s while subagents run) |
 | **Line 2 · Right** | `5h ▮▮▮▮▮▯ 85% (2h30m) │ 7d ▮▮▮▮▯▯ 64% (3d)` | Active model pool quotas (**Gemini 4 Neon / Carbon / Hydrogen / Argon** & **Claude 3p**) with reset countdowns |
 
 ---
@@ -209,11 +209,13 @@ agy-bar config reset
 # Update (preserves config, ledger, pricing cache & original statusLine backup)
 npx agy-bar@latest install
 
-# Uninstall & restore previous statusLine cleanly
+# Uninstall & restore previous statusLine + remove managed shell hook cleanly
 npx agy-bar uninstall            # or: agy-bar uninstall
 
-# Complete cleanup (also removes /agy-bar skill & ~/.gemini/config/agy-bar)
-npx agy-bar uninstall --remove-skill --purge
+# Complete cleanup including current terminal's proxy env vars & agy() function (zsh/bash):
+eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
+# (fish: agy-bar uninstall --remove-skill --purge --print-cleanup --fish | source)
+# (pwsh: agy-bar uninstall --remove-skill --purge --print-cleanup --pwsh | Invoke-Expression)
 ```
 
 ## Development
