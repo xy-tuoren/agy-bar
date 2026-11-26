@@ -387,3 +387,28 @@ test('renders green/red Git diff line counts (+added -removed) next to branch an
   assert.ok(clean.includes('~/code/agy-bar (main)'));
   assert.ok(!clean.includes('+0'));
 });
+
+test('renders CONFIRM, INPUT, ERR attention badges and BG background task counts on line 1', () => {
+  const confirmOut = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 116, agent_state: 'idle', tool_confirmation_pending: true, task_count: 2 },
+    { config: { theme: 'slate-dark' }, color: true, env: { COLORTERM: 'truecolor' } },
+  );
+  const confirmPlain = stripAnsi(confirmOut.split('\n')[0]);
+  assert.ok(confirmPlain.includes('CONFIRM'));
+  assert.ok(confirmPlain.includes('BG 2'));
+  assert.ok(confirmOut.includes('\x1b[38;2;251;191;36mCONFIRM'));
+
+  const inputPlain = stripAnsi(
+    renderStatusline(
+      { ...fixtures.geminiNormal, terminal_width: 116, agent_state: 'reviewing' },
+      { color: false },
+    ).split('\n')[0],
+  );
+  assert.ok(inputPlain.includes('INPUT'));
+
+  const errOut = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 116, agent_state: 'error' },
+    { config: { theme: 'slate-dark' }, color: true, env: { COLORTERM: 'truecolor' } },
+  );
+  assert.ok(errOut.includes('\x1b[38;2;248;113;113mERR'));
+});

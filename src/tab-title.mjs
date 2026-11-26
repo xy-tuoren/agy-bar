@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { accessSync, closeSync, constants, openSync, writeSync } from 'node:fs';
 import { basename } from 'node:path';
+import { classifyAgentActivity } from './agent-state.mjs';
 import { clipPlain, sanitizeText, visibleWidth } from './ansi.mjs';
 
 const VALID_TTY_RE = /^(?:tty[a-z0-9]+|pts\/\d+)$/i;
@@ -41,8 +42,8 @@ export function buildTabTitle(
 ) {
   const source = config.tabTitleSource || 'auto';
   const maxCols = config.tabTitleMaxLen || 26;
-  const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
-  const prefix = isBusy ? '● ' : '✓ ';
+  const activity = classifyAgentActivity(payload);
+  const prefix = activity.tabPrefix;
 
   const rawCwd = payload?.workspace?.current_dir || payload?.cwd || '';
   const dirName = rawCwd ? sanitizeText(basename(rawCwd)) : '';

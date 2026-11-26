@@ -169,4 +169,20 @@ test('renderMonitorFrame displays active multi-CLI sessions, CJK alignment, cost
   assert.match(frame, /\$1\.24/);
   assert.match(frame, /web-app:feat\/auth/);
   assert.match(frame, /exp/);
+
+  // Verify waiting confirmation, running subagents, and error states render distinctly in monitor.
+  const multiState = stripAnsi(
+    renderMonitorFrame(
+      [
+        { sessionId: 's-confirm', ageMs: 1000, activityKind: 'confirm', agentState: 'reviewing', workspaceName: 'app-a', model: 'Gemini 4 Neon', usedPct: 30 },
+        { sessionId: 's-subs', ageMs: 1000, activityKind: 'subagents', runningSubagents: 4, agentState: 'idle', workspaceName: 'app-b', model: 'Gemini 4 Neon', usedPct: 40 },
+        { sessionId: 's-err', ageMs: 1000, activityKind: 'error', agentState: 'error', workspaceName: 'app-c', model: 'Gemini 4 Neon', usedPct: 50 },
+      ],
+      { now, color: false, config: { theme: 'slate-dark', colorMode: 'health', barStyle: 'segments', cacheTtlSec: 300, contextWarn: 70, contextDanger: 88, quotaWarn: 25, quotaDanger: 10 } },
+    ),
+  );
+  assert.match(multiState, /1 waiting/);
+  assert.match(multiState, /\? confirm/);
+  assert.match(multiState, /● sub:4/);
+  assert.match(multiState, /✗ error/);
 });

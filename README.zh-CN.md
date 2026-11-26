@@ -38,7 +38,7 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 
 | 区域 | 显示内容 | 贴心细节 |
 | --- | --- | --- |
-| **第一行 · 左侧** | `~/code/agy-bar (main* +142 -38) · PX 7897` | 精简 `~` 路径（`dirStyle`）、当前改动实时增删行数（含已追踪修改与新建文本文件，3s 缓存）、本地代理端口徽章；仅在工作态按需亮起 `● 34s · esc`、并行子代理 `⚡2`、`PLAN`/`SANDBOX`、Vim `[NORMAL]` |
+| **第一行 · 左侧** | `~/code/agy-bar (main* +142 -38) · PX 7897` | 精简 `~` 路径（`dirStyle`）、当前改动实时增删行数（含已追踪修改与新建文本文件，3s 缓存）、本地代理端口徽章；按需亮起状态徽章（等待确认/输入 `CONFIRM`/`INPUT`、报错 `ERR`、工作态 `● 34s · esc`、并行子代理 `⚡2`、后台任务 `BG N`、`PLAN`/`SANDBOX`、Vim `[NORMAL]`） |
 | **第一行 · 右侧** | `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M │ 模型` | 低饱和中性配色汇总今日/本周/本月/累计用量与今日费用 + 当前模型与思考强度；窄分屏自动分级退让 |
 | **第二行 · 左侧** | `CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·158t/s │ ~$0.18` | 统一健康色上下文条（危急提示 `→/compact`）、5 分钟缓存保活倒计时、首字时间 + 纯解码速率、本对话预估费用（自动归集所有子代理与嵌套孙代理开销，子代理运行中每 20 秒准实时刷新） |
 | **第二行 · 右侧** | `5h ▮▮▮▮▮▯ 85% (2h30m) │ 7d ▮▮▮▮▯▯ 64% (3d)` | 自动匹配当前模型额度池（**Gemini 4 Neon / Carbon / Hydrogen / Argon** 与 **Claude 3p**）及重置倒计时 |
@@ -80,9 +80,9 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 
 ---
 
-### 5. 终端标签页标题自动同步 (`●` / `✓`) 与 Agent 摘要 (`agy-bar title`)
+### 5. 终端标签页标题自动同步 (`●` / `⚡N` / `?` / `✓`) 与 Agent 摘要 (`agy-bar title`)
 
-彻底告别多开时所有标签页都叫 `agy --dangerously-skip-permissions` 的烦恼：在 macOS / Linux / WSL 下的 Ghostty、iTerm2、Kitty、WezTerm、Terminal.app、VS Code 中通过标准 OSC 0/2 自动同步工作状态与精简主题（零额外 Token；原生 Windows 自动安全跳过）：
+彻底告别多开时所有标签页都叫 `agy --dangerously-skip-permissions` 的烦恼：在 macOS / Linux / WSL 下的 Ghostty、iTerm2、Kitty、WezTerm、Terminal.app、VS Code 中通过标准 OSC 0/2 自动同步精确状态（`●` 工作中、`⚡N` 子代理运行中、`?` 等待你确认/输入、`✗` 报错、`✓` 全部完成）与精简主题（零额外 Token；原生 Windows 自动安全跳过）：
 
 ![agy-bar Ghostty 标签页标题真机对比](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
 

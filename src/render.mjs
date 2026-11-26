@@ -1,8 +1,11 @@
 import { homedir } from 'node:os';
+import { classifyAgentActivity, countRunningSubagents } from './agent-state.mjs';
 import { bold, clipAnsi, detectColorDepth, fg, sanitizeText, visibleWidth } from './ansi.mjs';
 import { BAR_STYLES, DEFAULT_CONFIG, normalizeConfig } from './config.mjs';
 import { formatUsd } from './pricing.mjs';
 import { resolvePalette } from './themes.mjs';
+
+export { countRunningSubagents };
 
 const KNOWN_BUCKETS = Object.freeze({
   'gemini-5h': Object.freeze({ group: 'Gemini', kind: '5h', label: '5h' }),
@@ -233,28 +236,6 @@ export function extractActiveProxyLabel(env = {}) {
   }
 }
 
-export function countRunningSubagents(payload) {
-  const raw = payload?.subagents;
-  if (!raw) return 0;
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
-  if (Array.isArray(raw)) {
-    let count = 0;
-    for (const item of raw) {
-      if (!item || typeof item !== 'object') continue;
-      const st = String(item.status || item.state || '').toLowerCase();
-      if (item.running === true || st === 'running' || st === 'working' || st === 'active' || st === 'in_progress') {
-        count += 1;
-      }
-    }
-    return count;
-  }
-  if (typeof raw === 'object') {
-    const n = nonNegNumber(raw.running ?? raw.active);
-    return n !== null ? Math.floor(n) : 0;
-  }
-  return 0;
-}
-
 export function formatTurnElapsed(seconds) {
   const sec = nonNegNumber(seconds);
   if (sec === null || sec < 1) return '';
@@ -282,11 +263,20 @@ function formatModeBadges(payload, show, palette, color) {
   return joinWithSep(badges, ' · ', palette, color);
 }
 
-function formatSubagentsBadge(payload, show, palette, color) {
-  if (!show.subagents) return '';
-  const running = countRunningSubagents(payload);
-  if (running <= 0) return '';
-  return bold(fg(`⚡${running}`, palette.accent, color), color);
+function formatAttentionBadge(activity, show, palette, color) {
+  if (!activity.statusBadge || (!show.mode && !show.hint)) return '';
+  const tone = activity.kind === 'error' ? palette.danger : palette.warn;
+  return bold(fg(activity.statusBadge, tone, color), color);
+}
+
+function formatSubagentsBadge(activity, show, palette, color) {
+  if (!show.subagents || activity.runningSubagents <= 0) return '';
+  return bold(fg(`⚡${activity.runningSubagents}`, palette.accent, color), color);
+}
+
+function formatTasksBadge(activity, show, palette, color) {
+  if (!show.subagents || activity.runningTasks <= 0) return '';
+  return `${fg('BG', palette.muted, color)} ${fg(String(activity.runningTasks), palette.accent, color)}`;
 }
 
 function formatBusySegment(isBusy, telemetry, show, palette, color) {
@@ -460,11 +450,13 @@ function formatUsageSummarySegment(
 
 function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null, telemetry = null, env = {}, home = homedir()) {
   const { show, dirStyle } = config;
-  const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
+  const activity = classifyAgentActivity(payload);
   const vimBadge = formatVimBadge(payload, show, palette, color);
+  const attentionBadge = formatAttentionBadge(activity, show, palette, color);
   const modeBadge = formatModeBadges(payload, show, palette, color);
-  const subagentsBadge = formatSubagentsBadge(payload, show, palette, color);
-  const busySeg = formatBusySegment(isBusy, telemetry, show, palette, color);
+  const subagentsBadge = formatSubagentsBadge(activity, show, palette, color);
+  const tasksBadge = formatTasksBadge(activity, show, palette, color);
+  const busySeg = formatBusySegment(activity.isMainBusy, telemetry, show, palette, color);
   const proxyBadge = formatProxyBadge(env, show, palette, color);
   const modelText = show.model ? formatModelName(payload?.model, show.effort) : '';
   const modelSeg = modelText ? fg(modelText, palette.muted, color) : '';
@@ -513,12 +505,12 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
     home,
   });
 
-  const leftFull = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsFull, proxyBadge], ' · ', palette, color);
-  const leftNoDiff = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsNoDiff, proxyBadge], ' · ', palette, color);
-  const leftShort = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort, proxyBadge], ' · ', palette, color);
-  const leftNoProxy = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort], ' · ', palette, color);
-  const leftCompact = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort || gitOnly], ' · ', palette, color);
-  const leftMinimal = vimBadge || modeBadge || subagentsBadge || busySeg || gitOnly;
+  const leftFull = joinWithSep([vimBadge, attentionBadge, modeBadge, subagentsBadge, tasksBadge, busySeg, wsFull, proxyBadge], ' · ', palette, color);
+  const leftNoDiff = joinWithSep([vimBadge, attentionBadge, modeBadge, subagentsBadge, tasksBadge, busySeg, wsNoDiff, proxyBadge], ' · ', palette, color);
+  const leftShort = joinWithSep([vimBadge, attentionBadge, modeBadge, subagentsBadge, tasksBadge, busySeg, wsShort, proxyBadge], ' · ', palette, color);
+  const leftNoProxy = joinWithSep([vimBadge, attentionBadge, modeBadge, subagentsBadge, tasksBadge, busySeg, wsShort], ' · ', palette, color);
+  const leftCompact = joinWithSep([vimBadge, attentionBadge, modeBadge, subagentsBadge, busySeg, wsShort || gitOnly], ' · ', palette, color);
+  const leftMinimal = attentionBadge || vimBadge || modeBadge || subagentsBadge || busySeg || gitOnly;
 
   const pairs = [
     [leftFull, rightFull],

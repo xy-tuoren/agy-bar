@@ -1,11 +1,12 @@
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyAgentActivity, extractNativeCostUsd } from './agent-state.mjs';
 import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { getOrRefreshUsageSummary } from './history-scan.mjs';
 import { maybeTriggerBackgroundPricingSync } from './pricing-sync.mjs';
-import { countRunningSubagents, renderFallback, renderStatusline } from './render.mjs';
+import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
 import { maybeCaptureRedactedPayload, peekSessionState, recordTelemetry, updateSessionTabTitle } from './telemetry.mjs';
@@ -61,6 +62,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       enableLedger: config.ledger,
     });
 
+    const activity = classifyAgentActivity(payload);
     let usageSummary = null;
     if (
       config.show.todayTokens ||
@@ -75,12 +77,13 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
         sessionId: telemetry.sessionId,
         deltaTokens: telemetry.turnTokensDelta || 0,
         deltaCostUsd: telemetry.turnCostDeltaUsd || 0,
-        hasRunningSubagents: countRunningSubagents(payload) > 0,
+        hasRunningSubagents: activity.runningSubagents > 0,
         allowScan: config.dbTiming,
       });
     }
 
-    const effectiveSessionCostUsd = Math.max(telemetry.sessionCostUsd || 0, usageSummary?.sessionCostUsd || 0);
+    const nativeCostUsd = extractNativeCostUsd(payload);
+    const effectiveSessionCostUsd = Math.max(telemetry.sessionCostUsd || 0, usageSummary?.sessionCostUsd || 0, nativeCostUsd || 0);
     const effectiveTelemetry =
       effectiveSessionCostUsd !== telemetry.sessionCostUsd
         ? { ...telemetry, sessionCostUsd: effectiveSessionCostUsd }

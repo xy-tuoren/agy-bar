@@ -48,6 +48,64 @@ function padLeft(text, len) {
   return w >= len ? s : ' '.repeat(len - w) + s;
 }
 
+function describeMonitorState(session, p, useColor) {
+  const kind = session.activityKind || (session.isBusy ? 'working' : 'idle');
+  if (kind === 'confirm' || kind === 'input') {
+    return {
+      dot: bold(fg('?', p.warn, useColor), useColor),
+      label: kind,
+      tone: p.warn,
+      strong: true,
+    };
+  }
+  if (kind === 'error') {
+    return {
+      dot: bold(fg('✗', p.danger, useColor), useColor),
+      label: 'error',
+      tone: p.danger,
+      strong: true,
+    };
+  }
+  if (kind === 'subagents') {
+    return {
+      dot: fg('●', p.accent, useColor),
+      label: `sub:${session.runningSubagents || 1}`,
+      tone: p.accent,
+      strong: false,
+    };
+  }
+  if (kind === 'tasks') {
+    return {
+      dot: fg('●', p.accent, useColor),
+      label: `task:${session.runningTasks || 1}`,
+      tone: p.accent,
+      strong: false,
+    };
+  }
+  if (kind === 'startup') {
+    return {
+      dot: fg('…', p.muted, useColor),
+      label: session.agentState === 'authenticating' ? 'auth' : 'init',
+      tone: p.muted,
+      strong: false,
+    };
+  }
+  if (kind === 'working') {
+    return {
+      dot: fg('●', p.warn, useColor),
+      label: session.agentState || 'working',
+      tone: p.warn,
+      strong: false,
+    };
+  }
+  return {
+    dot: session.ageMs <= 5 * 60 * 1000 ? fg('●', p.good, useColor) : fg('○', p.muted, useColor),
+    label: session.agentState || 'idle',
+    tone: p.text,
+    strong: false,
+  };
+}
+
 export function renderMonitorFrame(
   sessions,
   { now = Date.now(), config = loadConfig(), color = true, env = process.env, columns = process.stdout.columns || 98 } = {},
@@ -60,9 +118,11 @@ export function renderMonitorFrame(
   const ruleWidth = Math.min(104, Math.max(76, columns || 98));
 
   const activeCount = sessions.filter((s) => s.ageMs <= 5 * 60 * 1000).length;
+  const waitingCount = sessions.filter((s) => s.activityKind === 'confirm' || s.activityKind === 'input').length;
+  const waitSuffix = waitingCount > 0 ? ` · ${waitingCount} waiting` : '';
   lines.push(
     bold(fg('agy-bar monitor', p.accent, useColor), useColor) +
-      fg(` · ${sessions.length} recent CLI session${sessions.length === 1 ? '' : 's'} (${activeCount} active) · Ctrl+C to quit`, p.muted, useColor),
+      fg(` · ${sessions.length} recent CLI session${sessions.length === 1 ? '' : 's'} (${activeCount} active${waitSuffix}) · Ctrl+C to quit`, p.muted, useColor),
   );
   lines.push(fg('─'.repeat(ruleWidth), p.sep, useColor));
 
@@ -101,8 +161,9 @@ export function renderMonitorFrame(
   const healthyCtxColor = config.colorMode === 'distinct' ? p.accent : p.good;
 
   for (const s of sessions) {
-    const dot = s.isBusy ? fg('●', p.warn, useColor) : s.ageMs <= 5 * 60 * 1000 ? fg('●', p.good, useColor) : fg('○', p.muted, useColor);
-    const stateLabel = padRight(s.agentState || 'idle', 8);
+    const state = describeMonitorState(s, p, useColor);
+    const stateLabel = padRight(state.label, 8);
+    const styledState = state.strong ? bold(fg(stateLabel, state.tone, useColor), useColor) : fg(stateLabel, state.tone, useColor);
     const ws = s.workspaceName || s.sessionId.slice(0, 10);
     const branchPart = s.branch ? `:${s.branch}${s.dirty ? '*' : ''}` : '';
     const wsCell = padRight(`${ws}${branchPart}`, 22);
@@ -128,7 +189,7 @@ export function renderMonitorFrame(
     const costCell = padLeft(typeof s.sessionCostUsd === 'number' && s.sessionCostUsd > 0 ? formatUsd(s.sessionCostUsd) : '--', 7);
 
     lines.push(
-      `${dot} ${fg(stateLabel, s.isBusy ? p.warn : p.text, useColor)} ` +
+      `${state.dot} ${styledState} ` +
         `${fg(wsCell, p.branch, useColor)} ` +
         `${fg(modelCell, p.text, useColor)} ` +
         `${ctxBar} ${fg(ctxText, ctxTone, useColor)}   ` +

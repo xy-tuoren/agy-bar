@@ -455,6 +455,9 @@ export async function main(argv = process.argv.slice(2)) {
     const renderedTitle = buildTabTitle(
       {
         agent_state: updated.agentState,
+        subagents: updated.runningSubagents || 0,
+        task_count: updated.runningTasks || 0,
+        tool_confirmation_pending: Boolean(updated.toolConfirmationPending),
         conversation_title: updated.conversationTitle,
         cwd: updated.cwd,
       },

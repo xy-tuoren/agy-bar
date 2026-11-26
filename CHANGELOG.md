@@ -2,6 +2,16 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.1] - 2026-11-26
+
+### Added
+- **Full 6-State Agent Activity Machine (`src/agent-state.mjs`)**:
+  - Unified session activity classification across terminal tab titles, statusline Line 1 badges, telemetry turn timers, and `agy-bar monitor`, aligned with Antigravity CLI's official `statusLine` payload schema (`agent_state`, `tool_confirmation_pending`, `subagents`, `task_count`, and native `cost.total_usd`).
+  - **Subagents / Background Tasks Active (`⚡N` / `●`)**: When the parent agent pauses (`agent_state: "idle"`) while subagents (`subagents[].status === "running"`) or background tasks (`task_count > 0`) are still executing, tab titles stay active (`⚡N <topic>` / `● <topic>`) instead of falsely showing `✓` complete.
+  - **Waiting for User Input / Approval (`?` / `CONFIRM` / `INPUT`)**: Displays `? <topic>` on the tab, bold amber `CONFIRM` (`tool_confirmation_pending: true`) or `INPUT` (`agent_state: "reviewing"`) on statusline Line 1, and `? confirm` / `? input` + `N waiting` summary in `agy-bar monitor`.
+  - **Error & Startup States (`✗ ERR` / `…`)**: Distinctly marks `error` (`✗` + bold red `ERR`) and `authenticating` / `initializing` (`…`) instead of falling back to `✓`.
+  - **Native `cost.total_usd` Compatibility**: Automatically incorporates AGY's native `cost.total_usd` field when reported alongside local DB/telemetry cost tracking.
+
 ## [0.9.0] - 2026-11-26
 
 ### Added

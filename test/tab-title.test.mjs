@@ -43,6 +43,32 @@ test('buildTabTitle formats working/idle prefix and supports auto, dir, title+di
     buildTabTitle({ agent_state: 'idle', workspace: { current_dir: '/Users/dev/agy-bar' } }, { git: { branch: 'main', dirty: false } }),
     '✓ agy-bar (main)',
   );
+
+  // Idle main agent with running subagents shows ⚡N instead of ✓; reviewing/confirm shows ?; error shows ✗.
+  assert.equal(
+    buildTabTitle({
+      agent_state: 'idle',
+      conversation_title: '并行写小说',
+      subagents: [{ status: 'running' }, { status: 'running' }, { status: 'completed' }],
+    }),
+    '⚡2 并行写小说',
+  );
+  assert.equal(
+    buildTabTitle({ agent_state: 'reviewing', conversation_title: '确认部署方案' }),
+    '? 确认部署方案',
+  );
+  assert.equal(
+    buildTabTitle({ agent_state: 'working', tool_confirmation_pending: true, conversation_title: '执行命令' }),
+    '? 执行命令',
+  );
+  assert.equal(
+    buildTabTitle({ agent_state: 'error', conversation_title: '构建失败' }),
+    '✗ 构建失败',
+  );
+  assert.equal(
+    buildTabTitle({ agent_state: 'authenticating', workspace: { current_dir: '/Users/dev/agy-bar' } }),
+    '… agy-bar',
+  );
 });
 
 test('formatOscTitle sanitizes control characters and wraps in OSC 0 + OSC 2 sequence', () => {

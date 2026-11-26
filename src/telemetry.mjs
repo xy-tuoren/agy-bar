@@ -2,12 +2,11 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { classifyAgentActivity } from './agent-state.mjs';
 import { sanitizeText } from './ansi.mjs';
 import { configDir } from './config.mjs';
 import { writeFileAtomic } from './fs-atomic.mjs';
 import { estimateCost } from './pricing.mjs';
-
-const BUSY_STATES = new Set(['working', 'tool_use', 'thinking']);
 
 function nonNeg(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
@@ -188,12 +187,13 @@ export function recordTelemetry(
   const curCacheRead = nonNeg(usage?.cache_read_input_tokens) ?? 0;
   const curCacheWrite = nonNeg(usage?.cache_creation_input_tokens) ?? 0;
 
-  const isBusy = BUSY_STATES.has(p.agent_state);
-  const wasBusy = Boolean(prev?.isBusy);
+  const activity = classifyAgentActivity(p);
+  const isMainBusy = activity.isMainBusy;
+  const wasMainBusy = Boolean(prev?.isMainBusy ?? (prev?.activityKind ? prev.activityKind === 'working' : prev?.isBusy));
 
   let turnStartedAt = prev?.turnStartedAt ?? null;
   let turnFirstTokenAt = prev?.turnFirstTokenAt ?? null;
-  if (isBusy && (!wasBusy || turnStartedAt === null)) {
+  if (isMainBusy && (!wasMainBusy || turnStartedAt === null)) {
     turnStartedAt = now;
     turnFirstTokenAt = null;
   }
@@ -363,13 +363,13 @@ export function recordTelemetry(
     }
   }
 
-  if (!isBusy) {
+  if (!isMainBusy) {
     turnStartedAt = null;
     turnFirstTokenAt = null;
   }
 
   const turnElapsedSec =
-    isBusy && turnStartedAt !== null && now >= turnStartedAt ? Math.floor((now - turnStartedAt) / 1000) : null;
+    isMainBusy && turnStartedAt !== null && now >= turnStartedAt ? Math.floor((now - turnStartedAt) / 1000) : null;
 
   const cwd = p.workspace?.current_dir || p.cwd || prev?.cwd || null;
   const cacheTtlMs = Math.max(30, cacheTtlSec) * 1000;
@@ -399,7 +399,13 @@ export function recordTelemetry(
     gitCheckedAt: git?.dirtyChecked ? now : prev?.gitCheckedAt ?? null,
     dbStamp: stepTiming?.dbStamp ?? prev?.dbStamp ?? null,
     agentState: sanitizeText(p.agent_state || '') || 'idle',
-    isBusy,
+    activityKind: activity.kind,
+    needsAttention: activity.needsAttention,
+    runningSubagents: activity.runningSubagents,
+    runningTasks: activity.runningTasks,
+    toolConfirmationPending: activity.confirmPending,
+    isMainBusy,
+    isBusy: activity.isActive,
     conversationTitle,
     customTitle,
     customTitleBase,

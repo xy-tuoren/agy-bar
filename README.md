@@ -38,7 +38,7 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 
 | Zone | What It Shows | Smart Behavior |
 | --- | --- | --- |
-| **Line 1 · Left** | `~/code/agy-bar (main* +142 -38) · PX 7897` | Compact `~` path (`dirStyle`), live Git diff lines (tracked + untracked text, 3s cache), active proxy port badge, plus on-demand busy badges (`● 34s · esc`, `⚡2` subagents, `PLAN` / `SANDBOX`, Vim `[NORMAL]`) |
+| **Line 1 · Left** | `~/code/agy-bar (main* +142 -38) · PX 7897` | Compact `~` path (`dirStyle`), live Git diff lines (tracked + untracked text, 3s cache), active proxy port badge, plus on-demand state badges (`CONFIRM` / `INPUT` when waiting on you, `ERR`, `● 34s · esc`, `⚡2` subagents, `BG N` tasks, `PLAN` / `SANDBOX`, Vim `[NORMAL]`) |
 | **Line 1 · Right** | `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M │ Model` | Calm neutral cumulative token/spend strip + active model & reasoning effort; sheds gracefully on narrow split panes |
 | **Line 2 · Left** | `CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·158t/s │ ~$0.18` | Unified health context gauge (`→/compact` at danger), 5-min prompt cache TTL countdown, exact first-token latency + streaming decode speed, and live conversation spend (rolls up nested subagent costs automatically, refreshing every 20s while subagents run) |
 | **Line 2 · Right** | `5h ▮▮▮▮▮▯ 85% (2h30m) │ 7d ▮▮▮▮▯▯ 64% (3d)` | Active model pool quotas (**Gemini 4 Neon / Carbon / Hydrogen / Argon** & **Claude 3p**) with reset countdowns |
@@ -80,9 +80,9 @@ Running 3–5 `agy` sessions across different repos? Open `agy-bar monitor` in a
 
 ---
 
-### 5. Automatic Terminal Tab Titles (`●` / `✓`) & Agent Summarization (`agy-bar title`)
+### 5. Automatic Terminal Tab Titles (`●` / `⚡N` / `?` / `✓`) & Agent Summarization (`agy-bar title`)
 
-Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, and VS Code with live state + concise topic title via standard OSC 0/2 (zero extra tokens; safely skipped on native Windows):
+Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, and VS Code with live activity state (`●` working, `⚡N` running subagents, `?` waiting for user input/confirmation, `✗` error, `✓` truly idle) + concise topic title via standard OSC 0/2 (zero extra tokens; safely skipped on native Windows):
 
 ![agy-bar live Ghostty tab titles comparison](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
 
