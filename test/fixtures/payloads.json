@@ -1,0 +1,114 @@
+{
+  "initial": {
+    "version": "1.5.16",
+    "agent_state": "authenticating",
+    "terminal_width": 80,
+    "model": {
+      "id": "Gemini 4 Hydrogen (Medium)",
+      "display_name": "Gemini 4 Hydrogen (Medium)"
+    },
+    "context_window": {
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "context_window_size": 0,
+      "used_percentage": 0,
+      "remaining_percentage": 0,
+      "current_usage": null
+    }
+  },
+  "geminiNormal": {
+    "version": "1.5.16",
+    "agent_state": "idle",
+    "terminal_width": 100,
+    "model": {
+      "id": "gemini-4-carbon",
+      "display_name": "Gemini 4 Carbon (High)",
+      "effort": "high"
+    },
+    "context_window": {
+      "total_input_tokens": 42000,
+      "total_output_tokens": 1800,
+      "context_window_size": 1048576,
+      "used_percentage": 42.6,
+      "remaining_percentage": 57.4,
+      "current_usage": {
+        "input_tokens": 12000,
+        "output_tokens": 1200,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 88000
+      }
+    },
+    "quota": {
+      "3p-5h": { "remaining_fraction": 1, "reset_in_seconds": 15000, "disabled": true },
+      "3p-weekly": { "remaining_fraction": 0.4, "reset_in_seconds": 400000 },
+      "gemini-5h": { "remaining_fraction": 0.85, "reset_in_seconds": 9000 },
+      "gemini-weekly": { "remaining_fraction": 0.64, "reset_in_seconds": 259200 }
+    }
+  },
+  "geminiCritical": {
+    "version": "1.5.16",
+    "agent_state": "working",
+    "terminal_width": 100,
+    "model": {
+      "id": "gemini-4-carbon",
+      "display_name": "Gemini 4 Carbon (High)",
+      "effort": "high"
+    },
+    "context_window": {
+      "context_window_size": 1048576,
+      "used_percentage": 92.4,
+      "current_usage": {
+        "input_tokens": 80000,
+        "output_tokens": 2000,
+        "cache_read_input_tokens": 20000
+      }
+    },
+    "quota": {
+      "gemini-5h": { "remaining_fraction": 0.08, "reset_in_seconds": 900 },
+      "gemini-weekly": { "remaining_fraction": 0.09, "reset_in_seconds": 86400 }
+    }
+  },
+  "claude": {
+    "version": "1.5.16",
+    "agent_state": "idle",
+    "terminal_width": 100,
+    "model": {
+      "id": "claude-sonnet-4-6",
+      "display_name": "Claude Sonnet 4.6",
+      "effort": "medium"
+    },
+    "context_window": {
+      "context_window_size": 200000,
+      "used_percentage": 28.5,
+      "current_usage": {
+        "input_tokens": 10000,
+        "output_tokens": 500,
+        "cache_read_input_tokens": 40000
+      }
+    },
+    "quota": {
+      "gemini-5h": { "remaining_fraction": 0.99, "reset_in_seconds": 18000 },
+      "3p-5h": { "remaining_fraction": 0.72, "reset_in_seconds": 5400 },
+      "3p-weekly": { "remaining_fraction": 0.55, "reset_in_seconds": 300000 }
+    }
+  },
+  "argon": {
+    "version": "1.5.16",
+    "agent_state": "idle",
+    "terminal_width": 100,
+    "model": {
+      "id": "Gemini 4 Argon (High)",
+      "display_name": "Gemini 4 Argon (High)",
+      "effort": "high"
+    },
+    "context_window": {
+      "context_window_size": 1048576,
+      "used_percentage": 15.0,
+      "current_usage": null
+    },
+    "quota": {
+      "gemini-argon-wtu-weekly": { "remaining_fraction": 0.45, "reset_in_seconds": 172800 },
+      "gemini-weekly": { "remaining_fraction": 0.9, "reset_in_seconds": 172800 }
+    }
+  }
+}
