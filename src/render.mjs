@@ -1,4 +1,4 @@
-import { basename } from 'node:path';
+import { homedir } from 'node:os';
 import { bold, clipAnsi, fg, sanitizeText, visibleWidth } from './ansi.mjs';
 import { BAR_STYLES, DEFAULT_CONFIG, normalizeConfig } from './config.mjs';
 import { formatUsd } from './pricing.mjs';
@@ -318,9 +318,66 @@ function formatProxyBadge(env, show, palette, color) {
   return `${fg('PX', palette.muted, color)} ${fg(label, palette.good, color)}`;
 }
 
-function formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir = true, maxBranchLen = 22 } = {}) {
+export function formatCompactPath(rawCwd, { style = 'short', maxLen = 28, home = homedir() } = {}) {
+  const clean = sanitizeText(rawCwd || '');
+  if (!clean) return '';
+
+  const normalized = clean.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+  const normHome = sanitizeText(home || '').replace(/\\/g, '/').replace(/\/+$/, '');
+
+  const lastSeg = normalized === '/' ? '/' : normalized.split('/').filter(Boolean).at(-1) || normalized;
+  if (style === 'name') return lastSeg;
+
+  const isUnderHome = Boolean(
+    normHome &&
+      (normalized === normHome ||
+        normalized.startsWith(`${normHome}/`) ||
+        (process.platform === 'win32' && normalized.toLowerCase().startsWith(`${normHome.toLowerCase()}/`))),
+  );
+
+  if (style === 'parent') {
+    const parts = normalized.split('/').filter(Boolean);
+    if (parts.length <= 1) return lastSeg;
+    const two = `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+    return visibleWidth(two) <= maxLen ? two : lastSeg;
+  }
+
+  // style === 'short'
+  if (isUnderHome) {
+    if (normalized.length === normHome.length) return '~';
+    const rel = normalized.slice(normHome.length + 1);
+    const fullTilde = `~/${rel}`;
+    const segs = rel.split('/').filter(Boolean);
+    if (segs.length <= 2 && visibleWidth(fullTilde) <= maxLen) return fullTilde;
+    if (segs.length >= 2) {
+      const tail2 = `~/…/${segs[segs.length - 2]}/${segs[segs.length - 1]}`;
+      if (visibleWidth(tail2) <= maxLen) return tail2;
+    }
+    const tail1 = `~/…/${lastSeg}`;
+    return visibleWidth(tail1) <= maxLen ? tail1 : lastSeg;
+  }
+
+  const segs = normalized.split('/').filter(Boolean);
+  if (segs.length <= 2 && visibleWidth(normalized) <= maxLen) return normalized;
+  const prefix = /^[a-zA-Z]:/.test(normalized) ? `${segs[0]}/` : '/';
+  if (segs.length >= 2) {
+    const tail2 = `${prefix}…/${segs[segs.length - 2]}/${segs[segs.length - 1]}`;
+    if (visibleWidth(tail2) <= maxLen) return tail2;
+  }
+  const tail1 = `${prefix}…/${lastSeg}`;
+  return visibleWidth(tail1) <= maxLen ? tail1 : lastSeg;
+}
+
+function formatWorkspaceGitSegment(
+  payload,
+  git,
+  show,
+  palette,
+  color,
+  { withDir = true, dirStyle = 'short', maxDirLen = 28, maxBranchLen = 22, home = homedir() } = {},
+) {
   const rawCwd = payload?.workspace?.current_dir || payload?.cwd || '';
-  const dirName = withDir && show.dir && rawCwd ? sanitizeText(basename(rawCwd)) : '';
+  const dirName = withDir && show.dir && rawCwd ? formatCompactPath(rawCwd, { style: dirStyle, maxLen: maxDirLen, home }) : '';
   const branchRaw = show.git && git?.branch ? sanitizeText(git.branch) : '';
   let branch = branchRaw;
   if (branch && branch.length > maxBranchLen) {
@@ -379,8 +436,8 @@ function formatUsageSummarySegment(
   return joinWithSep(parts, ' · ', palette, color);
 }
 
-function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null, telemetry = null, env = {}) {
-  const { show } = config;
+function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null, telemetry = null, env = {}, home = homedir()) {
+  const { show, dirStyle } = config;
   const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
   const vimBadge = formatVimBadge(payload, show, palette, color);
   const modeBadge = formatModeBadges(payload, show, palette, color);
@@ -403,9 +460,25 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
   const rightDayTokOnly = joinWithSep([usageDayTokOnly, modelSeg], ' │ ', palette, color);
   const rightModelOnly = modelSeg;
 
-  const wsFull = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 24 });
-  const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 12 });
-  const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: false, maxBranchLen: 14 });
+  const wsFull = formatWorkspaceGitSegment(payload, git, show, palette, color, {
+    withDir: true,
+    dirStyle,
+    maxDirLen: 28,
+    maxBranchLen: 24,
+    home,
+  });
+  const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, {
+    withDir: true,
+    dirStyle: 'name',
+    maxDirLen: 18,
+    maxBranchLen: 12,
+    home,
+  });
+  const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, {
+    withDir: false,
+    maxBranchLen: 14,
+    home,
+  });
 
   const leftFull = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsFull, proxyBadge], ' · ', palette, color);
   const leftShort = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort, proxyBadge], ' · ', palette, color);
@@ -686,6 +759,7 @@ export function renderStatusline(
     telemetry = null,
     usageSummary = null,
     env = {},
+    home = homedir(),
     themeOptions = {},
   } = {},
 ) {
@@ -731,7 +805,7 @@ export function renderStatusline(
     cfg.show.monthTokens ||
     cfg.show.totalTokens
   ) {
-    const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git, usageSummary, telemetry, env);
+    const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git, usageSummary, telemetry, env, home);
     if (meta) lines.push(meta);
   }
   const metrics = renderMetricsRow(safePayload, width, cfg, palette, useColor, now, {

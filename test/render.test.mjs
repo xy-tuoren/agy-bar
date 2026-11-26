@@ -7,6 +7,7 @@ import { buildPreviewOutput } from '../src/preview.mjs';
 import {
   countRunningSubagents,
   extractActiveProxyLabel,
+  formatCompactPath,
   formatReset,
   formatTokens,
   formatTtft,
@@ -78,6 +79,7 @@ test('renders workspace dir + git, Vim badge, /compact danger hint, and optional
       show: { cost: true, session: true, compactHint: true },
     }),
     color: false,
+    home: '/Users/dev',
     git: { branch: 'feat/v3', dirty: true },
     telemetry: {
       cacheRemainingSec: 18,
@@ -88,7 +90,7 @@ test('renders workspace dir + git, Vim badge, /compact danger hint, and optional
     },
   });
   const [line1, line2] = out.split('\n');
-  assert.match(line1, /\[NORMAL\] · ● esc · agy-bar \(feat\/v3\*\)/);
+  assert.match(line1, /\[NORMAL\] · ● esc · ~\/agy-bar \(feat\/v3\*\)/);
   assert.match(line2, /92\.4% \(1\.0M\) →\/compact/);
   assert.match(line2, /~\$0\.42/);
   assert.match(line2, /12m·8t/);
@@ -103,10 +105,10 @@ test('renders minimal DAY/USD, WK, MO, and ALL token totals on line 1 and sheds 
     totalTokens: 906_200_000,
   };
   const wide = renderStatusline(
-    { ...fixtures.geminiNormal, terminal_width: 140, workspace: { current_dir: '/Users/dev/agy-bar' } },
-    { color: false, git: { branch: 'main', dirty: false }, usageSummary },
+    { ...fixtures.geminiNormal, terminal_width: 140, workspace: { current_dir: '/Users/dev/code/agy-bar' } },
+    { color: false, home: '/Users/dev', git: { branch: 'main', dirty: false }, usageSummary },
   ).split('\n')[0];
-  assert.match(wide, /^agy-bar \(main\)/);
+  assert.match(wide, /^~\/code\/agy-bar \(main\)/);
   assert.match(wide, /DAY 136M\/\$13\.2 · WK 810M · MO 875M · ALL 906M │ Gemini 4 Carbon · high$/);
 
   const medium = renderStatusline(
@@ -296,16 +298,28 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
     },
     {
       color: true,
+      home: '/Users/dev',
       git: { branch: 'main', dirty: true },
       telemetry: { turnElapsedSec: 95 },
       env: { HTTPS_PROXY: 'http://alice:secret@127.0.0.1:7897' },
     },
   );
   const activeLine1 = stripAnsi(activeOut.split('\n')[0]);
-  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · ● 1m35s · esc · agy-bar \(main\*\) · PX 7897/);
+  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · ● 1m35s · esc · ~\/agy-bar \(main\*\) · PX 7897/);
   // Credentials must never leak into the rendered proxy badge.
   assert.ok(!activeLine1.includes('secret'));
   assert.ok(!activeLine1.includes('alice'));
+});
+
+test('formatCompactPath shortens home, deep paths, Windows paths, and respects dirStyle options', () => {
+  assert.equal(formatCompactPath('/Users/xy', { home: '/Users/xy' }), '~');
+  assert.equal(formatCompactPath('/Users/xy/code', { home: '/Users/xy' }), '~/code');
+  assert.equal(formatCompactPath('/Users/xy/code/agy-bar', { home: '/Users/xy' }), '~/code/agy-bar');
+  assert.equal(formatCompactPath('/Users/xy/work/2026/client/agy-bar', { home: '/Users/xy', maxLen: 28 }), '~/…/client/agy-bar');
+  assert.equal(formatCompactPath('/Users/xy/work/2026/very-long-client-folder/agy-bar', { home: '/Users/xy', maxLen: 20 }), '~/…/agy-bar');
+  assert.equal(formatCompactPath('/var/www/app', { home: '/Users/xy' }), '/…/www/app');
+  assert.equal(formatCompactPath('/Users/xy/code/agy-bar', { style: 'parent', home: '/Users/xy' }), 'code/agy-bar');
+  assert.equal(formatCompactPath('/Users/xy/code/agy-bar', { style: 'name', home: '/Users/xy' }), 'agy-bar');
 });
 
 test('merges DAY token+USD on line 1 and keeps conversation cost with session metrics on line 2 left', () => {

@@ -18,6 +18,7 @@ export const BAR_STYLES = Object.freeze({
 
 export const BAR_STYLE_NAMES = Object.freeze(Object.keys(BAR_STYLES));
 export const COLOR_MODES = Object.freeze(['health', 'distinct']);
+export const DIR_STYLES = Object.freeze(['short', 'parent', 'name']);
 export const TAB_TITLE_SOURCES = Object.freeze(['auto', 'title', 'dir', 'title+dir']);
 
 export const PRESETS = Object.freeze({
@@ -132,6 +133,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   preset: 'dashboard',
   theme: 'auto',
   colorMode: 'health',
+  dirStyle: 'short',
   barStyle: 'segments',
   barWidth: 6,
   cacheTtlSec: 300,
@@ -329,6 +331,7 @@ export function normalizeConfig(raw) {
   const preset = PRESET_NAMES.includes(input.preset) ? input.preset : DEFAULT_CONFIG.preset;
   const theme = THEME_NAMES.includes(input.theme) ? input.theme : DEFAULT_CONFIG.theme;
   const colorMode = COLOR_MODES.includes(input.colorMode) ? input.colorMode : DEFAULT_CONFIG.colorMode;
+  const dirStyle = DIR_STYLES.includes(input.dirStyle) ? input.dirStyle : DEFAULT_CONFIG.dirStyle;
   const barStyle = BAR_STYLE_NAMES.includes(input.barStyle) ? input.barStyle : DEFAULT_CONFIG.barStyle;
   const barWidth = clampInt(input.barWidth, 4, 14, DEFAULT_CONFIG.barWidth);
   const cacheTtlSec = clampInt(input.cacheTtlSec, 30, 3600, DEFAULT_CONFIG.cacheTtlSec);
@@ -361,6 +364,7 @@ export function normalizeConfig(raw) {
     preset,
     theme,
     colorMode,
+    dirStyle,
     barStyle,
     barWidth,
     cacheTtlSec,
@@ -401,6 +405,7 @@ export function serializeConfig(cfg) {
     barWidth: normalized.barWidth,
   };
   if (normalized.colorMode !== DEFAULT_CONFIG.colorMode) out.colorMode = normalized.colorMode;
+  if (normalized.dirStyle !== DEFAULT_CONFIG.dirStyle) out.dirStyle = normalized.dirStyle;
   if (normalized.cacheTtlSec !== DEFAULT_CONFIG.cacheTtlSec) out.cacheTtlSec = normalized.cacheTtlSec;
   if (normalized.ledger !== DEFAULT_CONFIG.ledger) out.ledger = normalized.ledger;
   if (normalized.dbTiming !== DEFAULT_CONFIG.dbTiming) out.dbTiming = normalized.dbTiming;
@@ -508,6 +513,11 @@ export function applyConfigCommand(args = [], path = configPath()) {
           throw new Error(`Invalid colorMode "${value}". Choose: ${COLOR_MODES.join(', ')}`);
         }
         next.colorMode = value.toLowerCase();
+      } else if (['dirstyle', 'dir-style', 'dir_style'].includes(lower)) {
+        if (!DIR_STYLES.includes(value.toLowerCase())) {
+          throw new Error(`Invalid dirStyle "${value}". Choose: ${DIR_STYLES.join(', ')}`);
+        }
+        next.dirStyle = value.toLowerCase();
       } else if (['barstyle', 'bar-style', 'bar_style'].includes(lower)) {
         if (!BAR_STYLE_NAMES.includes(value.toLowerCase())) {
           throw new Error(`Invalid barStyle "${value}". Choose: ${BAR_STYLE_NAMES.join(', ')}`);

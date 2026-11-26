@@ -1,6 +1,6 @@
 {
   "name": "agy-bar",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Zero-dependency terminal statusline, no-TUN proxy launcher, exact TTFT & tok/s speed, 5-min cache TTL countdown, automatic tab titles, full-history token heatmap & stats, and multi-CLI monitor for Antigravity CLI (agy).",
   "type": "module",
   "license": "MIT",

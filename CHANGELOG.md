@@ -2,6 +2,13 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.10.1] - 2026-11-26
+
+### Improved
+- **Compact `~` Workspace Paths (`dirStyle: "short" | "parent" | "name"`)**:
+  - Top-left workspace display now defaults to a clean home-abbreviated path (`~/code`, `~/code/agy-bar`, or `~/…/client/agy-bar` for deep directories), automatically falling back to just the folder name on narrow split panes.
+  - Configurable anytime via `agy-bar config set dirStyle short | parent | name`.
+
 ## [0.10.0] - 2026-11-26
 
 ### Added

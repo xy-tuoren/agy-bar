@@ -149,6 +149,9 @@ agy-bar config theme ocean
 # 切换进度条风格：segments（▮▮▮▯▯▯ 默认分格）| squares（■■■□□□）| pills（▰▰▰▱▱▱）| dots（●●●○○○）| smooth | blocks | line | ascii
 agy-bar config bar-style segments
 
+# 目录路径风格：short（~/code/agy-bar 默认精简路径）| parent（code/agy-bar）| name（agy-bar）
+agy-bar config set dirStyle short
+
 # 配色模式：health（左右统一健康绿→黄→红）| distinct（左侧蓝 / 右侧绿）
 agy-bar config set colorMode health
 

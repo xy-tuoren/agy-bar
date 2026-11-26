@@ -111,6 +111,7 @@ const darkNormal = renderStatusline(
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
     env: { HTTPS_PROXY: 'http://127.0.0.1:7897' },
+    home: '/Users/dev',
   },
 ).split('\n');
 
@@ -122,6 +123,7 @@ const darkWarning = renderStatusline(
     git: { branch: 'feat/statusline', dirty: true },
     telemetry: SAMPLE_TELEMETRY.warning,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    home: '/Users/dev',
   },
 ).split('\n');
 
@@ -133,6 +135,7 @@ const darkCritical = renderStatusline(
     git: { branch: 'feat/statusline', dirty: true },
     telemetry: SAMPLE_TELEMETRY.critical,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    home: '/Users/dev',
   },
 ).split('\n');
 
@@ -143,6 +146,7 @@ const darkCompact = renderStatusline(
     color: true,
     git: { branch: 'main', dirty: false },
     telemetry: SAMPLE_TELEMETRY.claude,
+    home: '/Users/dev',
   },
 ).split('\n');
 
@@ -154,6 +158,7 @@ const lightNormal = renderStatusline(
     git: { branch: 'main', dirty: true },
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    home: '/Users/dev',
   },
 ).split('\n');
 

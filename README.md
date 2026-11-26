@@ -149,6 +149,9 @@ agy-bar config theme ocean
 # Gauge styles: segments (▮▮▮▯▯▯, default) | squares (■■■□□□) | pills (▰▰▰▱▱▱) | dots (●●●○○○) | smooth | blocks | line | ascii
 agy-bar config bar-style segments
 
+# Workspace path style: short (~/code/agy-bar, default) | parent (code/agy-bar) | name (agy-bar)
+agy-bar config set dirStyle short
+
 # Color mode: health (unified green->amber->red) | distinct (blue CTX vs green quota)
 agy-bar config set colorMode health
 
