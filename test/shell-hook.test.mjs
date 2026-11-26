@@ -6,11 +6,13 @@ import test from 'node:test';
 import {
   buildShellHookBlock,
   detectShell,
+  formatShellHookPrompt,
   hasCustomAgyDefinition,
   HOOK_END,
   HOOK_START,
   inspectShellHook,
   installShellHook,
+  resolveInstallShellHookChoice,
   uninstallShellHook,
 } from '../src/shell-hook.mjs';
 
@@ -88,4 +90,46 @@ test('buildShellHookBlock generates fish and PowerShell functions with graceful 
   assert.match(pwsh, /function agy \{/);
   assert.match(pwsh, /run --from-hook -- @args/);
   assert.match(pwsh, /Get-Command agy -CommandType Application/);
+});
+
+test('resolveInstallShellHookChoice prompts only on fresh interactive installs and stays safe non-interactively', async () => {
+  const promptText = formatShellHookPrompt({ rcPath: '/Users/demo/.zshrc' });
+  assert.match(promptText, /7-line managed agy\(\)/);
+  assert.match(promptText, /agy-bar proxy unhook/);
+
+  // Explicit CLI flags override prompting.
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ flagValue: true, isInteractive: true, promptFn: () => { throw new Error('should not prompt'); } }),
+    { enable: true, reason: 'flag' },
+  );
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ flagValue: false, alreadyInstalled: true, isInteractive: true }),
+    { enable: false, reason: 'flag' },
+  );
+
+  // Upgrades preserve an already-installed hook without re-prompting.
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ alreadyInstalled: true, isInteractive: true, promptFn: () => { throw new Error('should not prompt'); } }),
+    { enable: true, reason: 'preserved' },
+  );
+
+  // Fresh interactive install asks user cleanly.
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ isInteractive: true, promptFn: async () => true }),
+    { enable: true, reason: 'prompt-yes' },
+  );
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ isInteractive: true, promptFn: async () => false }),
+    { enable: false, reason: 'prompt-no' },
+  );
+
+  // Non-interactive (scripts/CI/AI without flag) leaves shell rc untouched by default.
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ isInteractive: false, promptFn: async () => true }),
+    { enable: false, reason: 'non-interactive-default' },
+  );
+  assert.deepEqual(
+    await resolveInstallShellHookChoice({ isInteractive: true, yes: true, promptFn: async () => true }),
+    { enable: false, reason: 'non-interactive-default' },
+  );
 });

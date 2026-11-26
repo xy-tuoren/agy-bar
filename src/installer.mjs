@@ -120,7 +120,7 @@ export function installAgyBar({
   env = process.env,
   withSkill = true,
   withShim = true,
-  withShellHook = true,
+  withShellHook = false,
   shell = null,
   preset = null,
   theme = null,

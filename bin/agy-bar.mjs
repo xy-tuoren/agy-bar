@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, realpathSync } from 'node:fs';
 import { delimiter, dirname, resolve } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
   applyConfigCommand,
@@ -31,7 +32,14 @@ import {
   validateProxyUrl,
 } from '../src/proxy.mjs';
 import { detectModelGroup, selectQuotaEntries } from '../src/render.mjs';
-import { inspectShellHook, installShellHook, SUPPORTED_SHELLS, uninstallShellHook } from '../src/shell-hook.mjs';
+import {
+  formatShellHookPrompt,
+  inspectShellHook,
+  installShellHook,
+  resolveInstallShellHookChoice,
+  SUPPORTED_SHELLS,
+  uninstallShellHook,
+} from '../src/shell-hook.mjs';
 import { aggregateStats, formatStatsReport, HEATMAP_PALETTE_NAMES, PERIOD_NAMES, readLedger, SOURCE_NAMES } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
 import { buildTabTitle, writeOscTitle } from '../src/tab-title.mjs';
@@ -46,10 +54,12 @@ export const HELP_TEXT = [
   'Usage: agy-bar <command> [options]',
   '',
   'Commands:',
-  '  install [options]       Install statusline + global agy-bar command + shell hook for plain "agy"',
+  '  install [options]       Install statusline + global ~/.local/bin/agy-bar command',
+  '    --proxy-hook          Also install managed agy() shell hook without prompting',
+  '    --no-proxy-hook       Skip shell hook without prompting (leaves ~/.zshrc untouched)',
   '    --no-skill            Skip installing the companion /agy-bar skill',
   '    --no-shim             Skip installing the ~/.local/bin/agy-bar shortcut command',
-  '    --no-shell-hook       Skip adding the managed agy() no-TUN proxy hook to ~/.zshrc / ~/.bashrc',
+  '    -y, --yes             Non-interactive install (keeps ~/.zshrc untouched unless --proxy-hook)',
   `    --shell <name>        Target shell for the hook (${SUPPORTED_SHELLS.join(' | ')})`,
   `    --preset <name>       Initial preset (${PRESET_NAMES.join(' | ')})`,
   `    --theme <name>        Initial theme (${THEME_NAMES.join(' | ')})`,
@@ -133,8 +143,9 @@ function parseFlags(args) {
     else if (arg === '--with-skill') flags.withSkill = true;
     else if (arg === '--no-shim') flags.withShim = false;
     else if (arg === '--with-shim') flags.withShim = true;
-    else if (arg === '--no-shell-hook') flags.withShellHook = false;
-    else if (arg === '--with-shell-hook') flags.withShellHook = true;
+    else if (arg === '--no-shell-hook' || arg === '--no-proxy-hook') flags.withShellHook = false;
+    else if (arg === '--with-shell-hook' || arg === '--proxy-hook') flags.withShellHook = true;
+    else if (arg === '--yes' || arg === '-y') flags.yes = true;
     else if (arg === '--remove-skill') flags.removeSkill = true;
     else if (arg === '--purge') flags.purge = true;
     else if (arg === '--plain') flags.plain = true;
@@ -193,10 +204,30 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (command === 'install') {
     const { flags } = parseFlags(rest);
+    const withShim = flags.withShim ?? true;
+    const hookState = inspectShellHook({ shell: flags.shell ?? null });
+    const hookDecision = await resolveInstallShellHookChoice({
+      flagValue: flags.withShellHook,
+      withShim,
+      alreadyInstalled: hookState.installed,
+      isInteractive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      yes: Boolean(flags.yes),
+      promptFn: async () => {
+        console.log(formatShellHookPrompt(hookState));
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        try {
+          const answer = await rl.question(`Enable plain "agy" no-TUN proxy hook in ${hookState.rcPath}? [y/N]: `);
+          return /^(?:y|yes)$/i.test(answer.trim());
+        } finally {
+          rl.close();
+        }
+      },
+    });
+
     const result = installAgyBar({
       withSkill: flags.withSkill ?? true,
-      withShim: flags.withShim ?? true,
-      withShellHook: flags.withShellHook ?? true,
+      withShim,
+      withShellHook: hookDecision.enable,
       shell: flags.shell ?? null,
       preset: flags.preset ?? null,
       theme: flags.theme ?? null,
@@ -216,10 +247,20 @@ export async function main(argv = process.argv.slice(2)) {
       console.log(`Note: ${result.shimWarning}`);
     }
     if (result.shellHook?.installed) {
-      console.log(`Installed shell hook (${result.shellHook.shell}): ${result.shellHook.rcPath}`);
-      console.log(`Run "${result.shellHook.reloadCmd}" (or open a new terminal) — then plain "agy" automatically uses your local proxy without TUN.`);
+      console.log(
+        `${result.shellHook.updated ? 'Updated' : 'Installed'} shell hook (${result.shellHook.shell}): ${result.shellHook.rcPath}`,
+      );
+      if (!result.shellHook.updated) {
+        console.log(
+          `Run "${result.shellHook.reloadCmd}" (or open a new terminal) — then plain "agy" automatically uses your local proxy without TUN.`,
+        );
+      }
     } else if (result.shellHook?.warning) {
       console.log(`Note: ${result.shellHook.warning}`);
+    } else if (withShim) {
+      console.log(
+        `Shell rc untouched (${hookState.rcPath}). Launch via local proxy with "agy-bar run", or enable plain "agy" anytime with "agy-bar proxy hook".`,
+      );
     }
     if (result.skillPath) {
       console.log(`Installed companion /agy-bar skill: ${result.skillPath}`);

@@ -2,6 +2,14 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.7.2] - 2026-11-26
+
+### Changed
+- **Transparent opt-in prompt for the `~/.zshrc` shell hook**:
+  - Interactive `agy-bar install` now clearly explains the optional 7-line managed `agy()` shell hook (what file it touches, that `agy` binaries are never modified, and how to remove it via `agy-bar proxy unhook`) and asks `[y/N]` before touching `~/.zshrc` / `~/.bashrc` / `config.fish`.
+  - Non-interactive installs (scripts, CI, `-y`) default to leaving shell rc files completely untouched unless `--proxy-hook` is explicitly passed (while seamlessly preserving an already-installed managed hook across upgrades).
+  - Updated `AGENTS.md` so AI installers ask the user before enabling `--proxy-hook`.
+
 ## [0.7.1] - 2026-11-26
 
 ### Added

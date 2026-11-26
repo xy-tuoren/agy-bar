@@ -223,3 +223,34 @@ export function inspectShellHook({ home = homedir(), shell = null, platform = pr
     reloadCmd: resolved.reloadCmd,
   };
 }
+
+export function formatShellHookPrompt({ rcPath }) {
+  return [
+    '',
+    `Optional: No-TUN proxy shell hook (${rcPath})`,
+    '  Adds a 7-line managed agy() function so typing plain "agy" automatically',
+    '  uses your local proxy (Clash/Surge/v2ray) without enabling TUN mode.',
+    '  • Never modifies the agy binary; stays silent when no local proxy is running.',
+    '  • Removable anytime via "agy-bar proxy unhook" or "agy-bar uninstall".',
+    `  • If you skip this, ${rcPath} stays untouched (you can still use "agy-bar run").`,
+    '',
+  ].join('\n');
+}
+
+export async function resolveInstallShellHookChoice({
+  flagValue = undefined,
+  withShim = true,
+  alreadyInstalled = false,
+  isInteractive = false,
+  yes = false,
+  promptFn = null,
+} = {}) {
+  if (!withShim) return { enable: false, reason: 'no-shim' };
+  if (typeof flagValue === 'boolean') return { enable: flagValue, reason: 'flag' };
+  if (alreadyInstalled) return { enable: true, reason: 'preserved' };
+  if (isInteractive && !yes && typeof promptFn === 'function') {
+    const accepted = Boolean(await promptFn());
+    return { enable: accepted, reason: accepted ? 'prompt-yes' : 'prompt-no' };
+  }
+  return { enable: false, reason: 'non-interactive-default' };
+}

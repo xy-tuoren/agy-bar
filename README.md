@@ -72,14 +72,14 @@ Then **restart `agy`** to see the new statusline (in an existing session, run `/
 
 ### Launch `agy` Through Local Proxy Without TUN
 
-`install` adds a small, reversible managed `agy()` shell hook to your `~/.zshrc` / `~/.bashrc` / `config.fish` (skip with `--no-shell-hook`, remove anytime with `agy-bar proxy unhook` or `uninstall`). After opening a new terminal (or running `source ~/.zshrc`), **simply type `agy` directly** — no TUN mode needed:
+During interactive `install`, `agy-bar` clearly explains and asks (`[y/N]`) whether you want to add a reversible 7-line managed `agy()` shell hook to `~/.zshrc` / `~/.bashrc` / `config.fish` (non-interactive installs leave your shell rc untouched by default unless `--proxy-hook` is passed). Once enabled (or via `agy-bar run` without any shell rc changes):
 
 ```sh
-# Just type plain agy — auto-detects macOS/Windows system proxy or Clash/Surge/v2ray port!
+# With the optional shell hook enabled — just type plain agy (no TUN needed!)
 agy
 agy -c --dangerously-skip-permissions
 
-# Or launch explicitly via agy-bar run (even without the shell hook)
+# Or launch explicitly via agy-bar run (zero changes to ~/.zshrc)
 agy-bar run -c
 
 # Pin your detected local proxy permanently, or set one manually
@@ -89,7 +89,7 @@ agy-bar proxy set http://127.0.0.1:7897
 # Inspect effective proxy, shell hook & live reachability, or toggle on/off
 agy-bar proxy status
 agy-bar proxy off
-agy-bar proxy hook      # (re-)install shell hook
+agy-bar proxy hook      # opt in to plain "agy" shell hook anytime
 agy-bar proxy unhook    # remove shell hook cleanly
 
 # One-shot direct bypass (no proxy) or shell env export

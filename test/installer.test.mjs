@@ -44,6 +44,7 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
       ),
     );
 
+    // Default programmatic install leaves ~/.zshrc untouched unless opted in.
     const installed = installAgyBar({
       home: fakeHome,
       executable: '/usr/local/bin/node',
@@ -58,8 +59,8 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
     assert.equal(installed.shimPath, cliShimPath(fakeHome, 'darwin'));
     assert.ok(existsSync(installed.shimPath));
     assert.ok(readFileSync(installed.shimPath, 'utf8').includes(MANAGED_SHIM_MARKER));
-    assert.equal(installed.shellHook?.installed, true);
-    assert.ok(readFileSync(join(fakeHome, '.zshrc'), 'utf8').includes('# >>> agy-bar proxy >>>'));
+    assert.equal(installed.shellHook, null);
+    assert.ok(!existsSync(join(fakeHome, '.zshrc')));
 
     const afterInstall = JSON.parse(readFileSync(settingsFile, 'utf8'));
     assert.equal(afterInstall.colorScheme, 'dark');
@@ -67,14 +68,17 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
     assert.equal(afterInstall.statusLine.enabled, true);
     assert.ok(afterInstall.statusLine.command.includes('agy-bar'));
 
-    // Re-installing (upgrade) must keep the original backup ('echo old-bar').
-    installAgyBar({
+    // Re-installing (upgrade) with shell hook opted in must keep the original backup ('echo old-bar').
+    const upgraded = installAgyBar({
       home: fakeHome,
       executable: '/usr/local/bin/node',
       platform: 'darwin',
       env: { SHELL: '/bin/zsh' },
       withSkill: true,
+      withShellHook: true,
     });
+    assert.equal(upgraded.shellHook?.installed, true);
+    assert.ok(readFileSync(join(fakeHome, '.zshrc'), 'utf8').includes('# >>> agy-bar proxy >>>'));
 
     const report = runDoctor({ home: fakeHome, platform: 'darwin', env: { SHELL: '/bin/zsh' } });
     assert.equal(report.ok, true);
