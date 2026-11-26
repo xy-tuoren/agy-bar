@@ -20,7 +20,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
 
   const config = loadConfig();
   const plain = argv.includes('--plain');
-  const color = !('NO_COLOR' in env) && !plain && config.theme !== 'mono';
+  const color = !('NO_COLOR' in env) && String(env.TERM || '').toLowerCase() !== 'dumb' && !plain && config.theme !== 'mono';
 
   try {
     const payload = JSON.parse(raw);

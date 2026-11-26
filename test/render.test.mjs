@@ -320,6 +320,29 @@ test('formatCompactPath shortens home, deep paths, Windows paths, and respects d
   assert.equal(formatCompactPath('/var/www/app', { home: '/Users/xy' }), '/…/www/app');
   assert.equal(formatCompactPath('/Users/xy/code/agy-bar', { style: 'parent', home: '/Users/xy' }), 'code/agy-bar');
   assert.equal(formatCompactPath('/Users/xy/code/agy-bar', { style: 'name', home: '/Users/xy' }), 'agy-bar');
+  assert.equal(formatCompactPath('c:\\Users\\Alice\\code\\agy-bar', { home: 'C:\\Users\\Alice' }), '~/code/agy-bar');
+  assert.equal(formatCompactPath('c:\\users\\alice', { home: 'C:\\Users\\Alice' }), '~');
+});
+
+test('renderStatusline automatically emits 256-color SGR in Apple_Terminal and truecolor in Ghostty/Windows Terminal', () => {
+  const macTerm = renderStatusline(fixtures.geminiNormal, {
+    color: true,
+    env: { TERM_PROGRAM: 'Apple_Terminal', TERM: 'xterm-256color' },
+  });
+  assert.ok(macTerm.includes('\x1b[38;5;'));
+  assert.ok(!macTerm.includes('\x1b[38;2;'));
+
+  const winTerm = renderStatusline(fixtures.geminiNormal, {
+    color: true,
+    env: { WT_SESSION: 'wt-1234' },
+  });
+  assert.ok(winTerm.includes('\x1b[38;2;'));
+
+  const dumbTerm = renderStatusline(fixtures.geminiNormal, {
+    color: true,
+    env: { TERM: 'dumb' },
+  });
+  assert.ok(!dumbTerm.includes('\x1b['));
 });
 
 test('merges DAY token+USD on line 1 and keeps conversation cost with session metrics on line 2 left', () => {

@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { bold, clipAnsi, fg, sanitizeText, visibleWidth } from './ansi.mjs';
+import { bold, clipAnsi, detectColorDepth, fg, sanitizeText, visibleWidth } from './ansi.mjs';
 import { BAR_STYLES, DEFAULT_CONFIG, normalizeConfig } from './config.mjs';
 import { formatUsd } from './pricing.mjs';
 import { resolvePalette } from './themes.mjs';
@@ -328,11 +328,14 @@ export function formatCompactPath(rawCwd, { style = 'short', maxLen = 28, home =
   const lastSeg = normalized === '/' ? '/' : normalized.split('/').filter(Boolean).at(-1) || normalized;
   if (style === 'name') return lastSeg;
 
+  const caseInsensitive = process.platform === 'win32' || /^[a-zA-Z]:(?:\/|$)/.test(normHome);
   const isUnderHome = Boolean(
     normHome &&
       (normalized === normHome ||
         normalized.startsWith(`${normHome}/`) ||
-        (process.platform === 'win32' && normalized.toLowerCase().startsWith(`${normHome.toLowerCase()}/`))),
+        (caseInsensitive &&
+          (normalized.toLowerCase() === normHome.toLowerCase() ||
+            normalized.toLowerCase().startsWith(`${normHome.toLowerCase()}/`)))),
   );
 
   if (style === 'parent') {
@@ -767,7 +770,8 @@ export function renderStatusline(
   const safePayload = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
   const width = Math.max(12, Math.floor(nonNegNumber(safePayload.terminal_width) || 80) - 2);
   const resolved = resolvePalette(cfg.theme, themeOptions);
-  const useColor = Boolean(color) && resolved.color;
+  const colorDepth = detectColorDepth(env);
+  const useColor = Boolean(color) && resolved.color && colorDepth !== 'none' ? colorDepth : false;
   const { palette } = resolved;
 
   if (cfg.preset === 'compact') {

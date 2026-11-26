@@ -98,9 +98,20 @@ test('aggregateStats and formatStatsReport summarize periods, model filters, quo
   assert.match(text, /saved \$/);
   assert.match(text, /Quota Δ:/);
 
-  const heatColored = renderActivityHeatmap({ '2026-11-26': 200_000_000, '2026-11-25': 50_000_000 }, { now, weeks: 20, heatmapPalette: 'purple', color: true });
+  const heatColored = renderActivityHeatmap({ '2026-11-26': 200_000_000, '2026-11-25': 50_000_000 }, { now, weeks: 20, heatmapPalette: 'purple', color: true, env: { COLORTERM: 'truecolor' } });
   assert.equal(heatColored.length, 9); // month axis + 7 days + legend
   assert.ok(heatColored.some((line) => line.includes('\x1b[38;2;216;180;254m■')));
+
+  // Light theme uses inverted light-background heatmap palette and Apple_Terminal uses 256-color SGR.
+  const heatLight = renderActivityHeatmap({ '2026-11-26': 200_000_000 }, { now, weeks: 20, heatmapPalette: 'purple', color: true, theme: 'slate-light', env: { COLORTERM: 'truecolor' } });
+  assert.ok(heatLight.some((line) => line.includes('\x1b[38;2;88;28;135m■')));
+  const heat256 = renderActivityHeatmap({ '2026-11-26': 200_000_000 }, { now, weeks: 20, heatmapPalette: 'purple', color: true, env: { TERM_PROGRAM: 'Apple_Terminal', TERM: 'xterm-256color' } });
+  assert.ok(heat256.some((line) => line.includes('\x1b[38;5;')));
+  assert.ok(!heat256.some((line) => line.includes('\x1b[38;2;')));
+
+  // 4-card overview grid fits inside standard 80-column terminals (77 cols) without wrapping.
+  const cardTopLine = text.split('\n').find((l) => l.startsWith('┌'));
+  assert.ok(cardTopLine && cardTopLine.length <= 80, `Card grid width ${cardTopLine?.length} exceeded 80 cols`);
 });
 
 test('renderMonitorFrame displays active multi-CLI sessions, CJK alignment, cost, and friendly quota labels', () => {
@@ -143,7 +154,7 @@ test('renderMonitorFrame displays active multi-CLI sessions, CJK alignment, cost
         quota: null,
       },
     ],
-    { now, color: true, config: { theme: 'slate-dark', colorMode: 'health', barStyle: 'segments', cacheTtlSec: 300, contextWarn: 70, contextDanger: 88, quotaWarn: 25, quotaDanger: 10 } },
+    { now, color: true, env: { COLORTERM: 'truecolor' }, config: { theme: 'slate-dark', colorMode: 'health', barStyle: 'segments', cacheTtlSec: 300, contextWarn: 70, contextDanger: 88, quotaWarn: 25, quotaDanger: 10 } },
   );
 
   // Health colorMode uses good green (52;211;153) for healthy 48.2% context bar.

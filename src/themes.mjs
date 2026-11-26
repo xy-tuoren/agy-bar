@@ -1,7 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { writeFileAtomic } from './fs-atomic.mjs';
+
+const WIN_THEME_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export const PALETTES = Object.freeze({
   'slate-dark': Object.freeze({
@@ -67,12 +70,8 @@ export function detectSystemMode({
   home = homedir(),
   platform = process.platform,
   env = process.env,
-  queryWindows = () =>
-    execFileSync(
-      'reg.exe',
-      ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize', '/v', 'AppsUseLightTheme'],
-      { encoding: 'utf8', windowsHide: true, timeout: 400, stdio: ['ignore', 'pipe', 'ignore'] },
-    ),
+  now = Date.now(),
+  queryWindows = null,
 } = {}) {
   try {
     const settingsPath = join(home, '.gemini', 'antigravity-cli', 'settings.json');
@@ -84,20 +83,49 @@ export function detectSystemMode({
     // Fall through to terminal/system hints.
   }
 
-  if (platform === 'win32') {
-    try {
-      const match = /AppsUseLightTheme\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(queryWindows());
-      if (match) return parseInt(match[1], 16) === 0 ? 'dark' : 'light';
-    } catch {
-      // Ignore registry failures.
-    }
-  }
-
   const colorfgbg = env.COLORFGBG;
   if (typeof colorfgbg === 'string' && colorfgbg.includes(';')) {
     const bg = Number(colorfgbg.split(';').at(-1));
     if (Number.isInteger(bg) && bg >= 0 && bg <= 15) {
       return bg === 7 || bg >= 9 ? 'light' : 'dark';
+    }
+  }
+
+  if (platform === 'win32') {
+    const cachePath = join(home, '.gemini', 'config', 'agy-bar', '.win-theme-cache.json');
+    if (!queryWindows && existsSync(cachePath)) {
+      try {
+        const cached = JSON.parse(readFileSync(cachePath, 'utf8'));
+        if ((cached?.mode === 'dark' || cached?.mode === 'light') && now - Number(cached.checkedAt || 0) < WIN_THEME_CACHE_TTL_MS) {
+          return cached.mode;
+        }
+      } catch {
+        // Ignore stale/corrupt theme cache.
+      }
+    }
+
+    try {
+      const output = queryWindows
+        ? queryWindows()
+        : execFileSync(
+            'reg.exe',
+            ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize', '/v', 'AppsUseLightTheme'],
+            { encoding: 'utf8', windowsHide: true, timeout: 400, stdio: ['ignore', 'pipe', 'ignore'] },
+          );
+      const match = /AppsUseLightTheme\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(output);
+      if (match) {
+        const mode = parseInt(match[1], 16) === 0 ? 'dark' : 'light';
+        if (!queryWindows) {
+          try {
+            writeFileAtomic(cachePath, JSON.stringify({ mode, checkedAt: now }) + '\n');
+          } catch {
+            // Ignore cache write errors.
+          }
+        }
+        return mode;
+      }
+    } catch {
+      // Ignore registry failures.
     }
   }
 

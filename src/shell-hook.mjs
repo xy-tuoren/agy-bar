@@ -39,7 +39,11 @@ export function resolveShellRcPath({ home = homedir(), shell = null, platform = 
     return { shell: 'fish', rcPath: target, reloadCmd: `source ${target}` };
   }
 
-  const target = join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1');
+  const pwsh7Dir = join(home, 'Documents', 'PowerShell');
+  const winPsDir = join(home, 'Documents', 'WindowsPowerShell');
+  const psModulePath = String(env.PSModulePath || '');
+  const looksLikeWinPs5 = !psModulePath.includes('PowerShell\\7') && existsSync(winPsDir) && !existsSync(pwsh7Dir);
+  const target = join(looksLikeWinPs5 ? winPsDir : pwsh7Dir, 'Microsoft.PowerShell_profile.ps1');
   return { shell: 'pwsh', rcPath: target, reloadCmd: '. $PROFILE' };
 }
 
@@ -64,7 +68,7 @@ export function buildShellHookBlock(shell) {
       'function agy {',
       "  $agyBar = Join-Path $HOME '.local\\bin\\agy-bar.cmd'",
       '  if (Test-Path $agyBar) {',
-      '    & $agyBar run --from-hook -- @args',
+      "    & $agyBar run --from-hook '--' @args",
       '  } else {',
       '    $bin = (Get-Command agy -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source',
       '    if ($bin) { & $bin @args }',
@@ -190,6 +194,7 @@ export function uninstallShellHook({ home = homedir(), shell = null, platform = 
         join(home, '.bash_profile'),
         join(home, '.config', 'fish', 'config.fish'),
         join(home, 'Documents', 'PowerShell', 'Microsoft.PowerShell_profile.ps1'),
+        join(home, 'Documents', 'WindowsPowerShell', 'Microsoft.PowerShell_profile.ps1'),
       ];
 
   const removedPaths = [];

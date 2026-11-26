@@ -13,6 +13,7 @@ import {
   parseWindowsRegProxy,
   redactProxyUrl,
   resolveEffectiveProxy,
+  resolveSpawnTarget,
   validateProxyUrl,
 } from '../src/proxy.mjs';
 
@@ -247,4 +248,32 @@ test('checkLocalPort and launchAgyWithProxy verify TCP reachability and inject p
       return true;
     },
   );
+});
+
+test('resolveSpawnTarget resolves Windows .exe and .cmd shims cleanly', () => {
+  assert.deepEqual(resolveSpawnTarget('agy', { platform: 'darwin', env: {} }), { command: 'agy', shell: false });
+  assert.deepEqual(resolveSpawnTarget('C:\\bin\\agy.cmd', { platform: 'win32', env: {} }), {
+    command: 'C:\\bin\\agy.cmd',
+    shell: true,
+  });
+  assert.deepEqual(resolveSpawnTarget('C:\\bin\\agy.exe', { platform: 'win32', env: {} }), {
+    command: 'C:\\bin\\agy.exe',
+    shell: false,
+  });
+
+  const cmdHit = resolveSpawnTarget('agy', {
+    platform: 'win32',
+    env: { PATH: 'C:\\Users\\demo\\AppData\\Roaming\\npm', PATHEXT: '.COM;.EXE;.BAT;.CMD' },
+    fileExists: (p) => p.endsWith('agy.cmd'),
+  });
+  assert.equal(cmdHit.shell, true);
+  assert.match(cmdHit.command, /agy\.cmd$/);
+
+  const exeHit = resolveSpawnTarget('agy', {
+    platform: 'win32',
+    env: { PATH: 'C:\\Users\\demo\\.local\\bin', PATHEXT: '.COM;.EXE;.BAT;.CMD' },
+    fileExists: (p) => p.endsWith('agy.exe'),
+  });
+  assert.equal(exeHit.shell, false);
+  assert.match(exeHit.command, /agy\.exe$/);
 });

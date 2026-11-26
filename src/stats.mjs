@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { bold, fg, visibleWidth } from './ansi.mjs';
+import { bold, clipPlain, detectColorDepth, fg, visibleWidth } from './ansi.mjs';
 import { configDir } from './config.mjs';
 import { estimateCost, formatUsd } from './pricing.mjs';
 import { formatTokens, formatTtft, renderBar } from './render.mjs';
@@ -39,6 +39,37 @@ const HEATMAP_RAMPS = Object.freeze({
     [180, 83, 9],
     [245, 158, 11],
     [253, 230, 138],
+  ]),
+});
+
+const HEATMAP_RAMPS_LIGHT = Object.freeze({
+  purple: Object.freeze([
+    [218, 224, 232],
+    [216, 180, 254],
+    [168, 125, 245],
+    [126, 34, 206],
+    [88, 28, 135],
+  ]),
+  green: Object.freeze([
+    [218, 224, 232],
+    [167, 243, 208],
+    [52, 211, 153],
+    [5, 150, 105],
+    [6, 95, 70],
+  ]),
+  cyan: Object.freeze([
+    [218, 224, 232],
+    [186, 230, 253],
+    [56, 189, 248],
+    [2, 132, 199],
+    [7, 89, 133],
+  ]),
+  amber: Object.freeze([
+    [218, 224, 232],
+    [253, 230, 138],
+    [245, 158, 11],
+    [180, 83, 9],
+    [120, 53, 15],
   ]),
 });
 
@@ -389,29 +420,36 @@ function padLeft(text, len) {
 }
 
 function renderCardGrid(cards, p, useColor) {
-  const colW = 19;
+  const colW = 18;
+  const innerW = colW - 2;
   const top = fg(`┌${cards.map(() => '─'.repeat(colW)).join('┬')}┐`, p.sep, useColor);
   const bot = fg(`└${cards.map(() => '─'.repeat(colW)).join('┴')}┘`, p.sep, useColor);
   const pipe = fg('│', p.sep, useColor);
 
-  const rowLine = (cells) => `${pipe}${cells.map((c) => ` ${padRight(c, colW - 2)} `).join(pipe)}${pipe}`;
+  const fit = (text) => {
+    const s = String(text ?? '');
+    return visibleWidth(s) > innerW ? `${clipPlain(s, Math.max(1, innerW - 1))}…` : s;
+  };
+  const rowLine = (cells) => `${pipe}${cells.map((c) => ` ${padRight(c, innerW)} `).join(pipe)}${pipe}`;
   return [
     top,
-    rowLine(cards.map((c) => fg(c.label, p.muted, useColor))),
-    rowLine(cards.map((c) => bold(fg(c.value, c.color || p.text, useColor), useColor))),
-    rowLine(cards.map((c) => fg(c.sub, p.muted, useColor))),
+    rowLine(cards.map((c) => fg(fit(c.label), p.muted, useColor))),
+    rowLine(cards.map((c) => bold(fg(fit(c.value), c.color || p.text, useColor), useColor))),
+    rowLine(cards.map((c) => fg(fit(c.sub), p.muted, useColor))),
     bot,
   ];
 }
 
 export function renderActivityHeatmap(
   dailyTokens = {},
-  { now = Date.now(), weeks = 26, heatmapPalette = 'purple', color = true, theme = 'auto' } = {},
+  { now = Date.now(), weeks = 26, heatmapPalette = 'purple', color = true, theme = 'auto', env = process.env } = {},
 ) {
-  const resolved = resolvePalette(theme);
-  const useColor = color && resolved.color;
+  const resolved = resolvePalette(theme, { env });
+  const colorDepth = detectColorDepth(env);
+  const useColor = Boolean(color) && resolved.color && colorDepth !== 'none' ? colorDepth : false;
   const p = resolved.palette;
-  const ramp = HEATMAP_RAMPS[heatmapPalette] || HEATMAP_RAMPS.purple;
+  const rampSet = resolved.name === 'slate-light' ? HEATMAP_RAMPS_LIGHT : HEATMAP_RAMPS;
+  const ramp = rampSet[heatmapPalette] || rampSet.purple;
 
   const end = new Date(startOfLocalDay(now));
   // Align grid end to Saturday (day 6) of the current week so columns are Sunday..Saturday.
@@ -480,7 +518,7 @@ export function renderActivityHeatmap(
       if (lvl < 0) {
         cells.push('  ');
       } else if (useColor) {
-        cells.push(`${fg('■', ramp[lvl], true)} `);
+        cells.push(`${fg('■', ramp[lvl], useColor)} `);
       } else {
         cells.push(`${HEATMAP_ASCII[lvl]} `);
       }
@@ -489,7 +527,7 @@ export function renderActivityHeatmap(
   }
 
   const legendCells = [0, 1, 2, 3, 4]
-    .map((lvl) => (useColor ? fg('■', ramp[lvl], true) : HEATMAP_ASCII[lvl]))
+    .map((lvl) => (useColor ? fg('■', ramp[lvl], useColor) : HEATMAP_ASCII[lvl]))
     .join(' ');
   lines.push(`     ${fg('Less', p.muted, useColor)} ${legendCells} ${fg('More', p.muted, useColor)}`);
   return lines;
@@ -497,12 +535,13 @@ export function renderActivityHeatmap(
 
 export function formatStatsReport(
   report,
-  { color = true, theme = 'auto', heatmapPalette = 'purple', columns = process.stdout.columns || 100, now = Date.now() } = {},
+  { color = true, theme = 'auto', heatmapPalette = 'purple', columns = process.stdout.columns || 100, now = Date.now(), env = process.env } = {},
 ) {
-  const resolved = resolvePalette(theme);
-  const useColor = color && resolved.color;
+  const resolved = resolvePalette(theme, { env });
+  const colorDepth = detectColorDepth(env);
+  const useColor = Boolean(color) && resolved.color && colorDepth !== 'none' ? colorDepth : false;
   const p = resolved.palette;
-  const ruleW = 81;
+  const ruleW = 77;
 
   const lines = [];
   const srcNote = report.source ? ` · source=${report.source}` : '';
@@ -554,7 +593,7 @@ export function formatStatsReport(
     bold(fg(`Token Activity (${heatWeeks}w)`, p.text, useColor), useColor) +
       fg(`${peakNote}${streakNote}`, p.muted, useColor),
   );
-  lines.push(...renderActivityHeatmap(ov.dailyTokens, { now, weeks: heatWeeks, heatmapPalette, color: useColor, theme }));
+  lines.push(...renderActivityHeatmap(ov.dailyTokens, { now, weeks: heatWeeks, heatmapPalette, color: Boolean(useColor), theme, env }));
 
   // Focused period breakdown
   lines.push('');

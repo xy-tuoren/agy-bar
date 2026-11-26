@@ -1,7 +1,7 @@
 {
   "name": "agy-bar",
-  "version": "0.10.1",
-  "description": "Zero-dependency terminal statusline, no-TUN proxy launcher, exact TTFT & tok/s speed, 5-min cache TTL countdown, automatic tab titles, full-history token heatmap & stats, and multi-CLI monitor for Antigravity CLI (agy).",
+  "version": "0.9.0",
+  "description": "Zero-dependency terminal statusline, no-TUN proxy launcher, exact TTFT & tok/s speed, 5-min cache TTL countdown, live pricing cache, automatic tab titles, 52-week token heatmap, and multi-CLI monitor for Antigravity CLI (agy).",
   "type": "module",
   "license": "MIT",
   "author": "xy-tuoren",
@@ -23,6 +23,11 @@
     "quota",
     "context-window",
     "token-usage",
+    "heatmap",
+    "pricing",
+    "proxy",
+    "gemini",
+    "claude",
     "terminal"
   ],
   "engines": {
@@ -48,6 +53,7 @@
     "preview": "node bin/agy-bar.mjs preview",
     "preview:svg": "node scripts/generate-preview-svg.mjs && node scripts/generate-stats-svg.mjs",
     "stats": "node bin/agy-bar.mjs stats",
+    "pricing": "node bin/agy-bar.mjs pricing",
     "monitor": "node bin/agy-bar.mjs monitor",
     "debug": "node bin/agy-bar.mjs debug",
     "doctor": "node bin/agy-bar.mjs doctor"

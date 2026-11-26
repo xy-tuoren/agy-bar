@@ -1,4 +1,4 @@
-import { bold, clipPlain, fg, visibleWidth } from './ansi.mjs';
+import { bold, clipPlain, detectColorDepth, fg, visibleWidth } from './ansi.mjs';
 import { loadConfig } from './config.mjs';
 import { formatUsd } from './pricing.mjs';
 import { formatReset, formatTtft, renderBar } from './render.mjs';
@@ -48,12 +48,16 @@ function padLeft(text, len) {
   return w >= len ? s : ' '.repeat(len - w) + s;
 }
 
-export function renderMonitorFrame(sessions, { now = Date.now(), config = loadConfig(), color = true } = {}) {
-  const resolved = resolvePalette(config.theme);
-  const useColor = color && resolved.color;
+export function renderMonitorFrame(
+  sessions,
+  { now = Date.now(), config = loadConfig(), color = true, env = process.env, columns = process.stdout.columns || 98 } = {},
+) {
+  const resolved = resolvePalette(config.theme, { env });
+  const colorDepth = detectColorDepth(env);
+  const useColor = Boolean(color) && resolved.color && colorDepth !== 'none' ? colorDepth : false;
   const p = resolved.palette;
   const lines = [];
-  const ruleWidth = 98;
+  const ruleWidth = Math.min(104, Math.max(76, columns || 98));
 
   const activeCount = sessions.filter((s) => s.ageMs <= 5 * 60 * 1000).length;
   lines.push(

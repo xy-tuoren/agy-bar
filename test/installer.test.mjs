@@ -9,6 +9,8 @@ import {
   buildCommand,
   cliShimPath,
   installAgyBar,
+  installedAppDir,
+  isAgyBarCommand,
   MANAGED_SHIM_MARKER,
   runDoctor,
   uninstallAgyBar,
@@ -153,6 +155,62 @@ test('does not overwrite an unrelated ~/.local/bin/agy-bar file and generates Wi
     const winShim = buildCliShim('C:\\Program Files\\node.exe', 'C:\\Users\\xy\\agy-bar.mjs', 'win32');
     assert.match(winShim, /REM agy-bar: managed shim/);
     assert.match(winShim, /"C:\\Program Files\\node\.exe" "C:\\Users\\xy\\agy-bar\.mjs" %\*/);
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('self-reinstalling from installed app dir does not wipe runtime or fail on skill copy', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-self-reinstall-'));
+  try {
+    const first = installAgyBar({
+      home: fakeHome,
+      executable: '/usr/local/bin/node',
+      platform: 'darwin',
+      env: { SHELL: '/bin/zsh' },
+      withSkill: true,
+    });
+    assert.ok(existsSync(first.scriptPath));
+    assert.ok(existsSync(join(installedAppDir(fakeHome), 'skills', 'agy-bar', 'SKILL.md')));
+
+    // Simulate running `agy-bar install --proxy-hook` via the installed ~/.local/bin/agy-bar shim.
+    const second = installAgyBar({
+      home: fakeHome,
+      executable: '/usr/local/bin/node',
+      platform: 'darwin',
+      env: { SHELL: '/bin/zsh' },
+      withSkill: true,
+      withShellHook: true,
+      sourceRoot: installedAppDir(fakeHome),
+    });
+    assert.equal(second.installed, true);
+    assert.ok(existsSync(second.scriptPath));
+    assert.ok(existsSync(second.cliPath));
+    assert.ok(existsSync(targetSkillPath(fakeHome)));
+    assert.equal(second.shellHook?.installed, true);
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('Windows install and runDoctor recognize Base64-encoded statusLine command', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-win-doctor-'));
+  try {
+    const installed = installAgyBar({
+      home: fakeHome,
+      executable: 'C:\\Program Files\\nodejs\\node.exe',
+      platform: 'win32',
+      env: {},
+      withSkill: true,
+    });
+    assert.equal(installed.installed, true);
+    assert.ok(!installed.command.includes('agy-bar'));
+    assert.equal(isAgyBarCommand(installed.command), true);
+
+    const report = runDoctor({ home: fakeHome, platform: 'win32', env: {} });
+    assert.equal(report.ok, true);
+    const settingsCheck = report.checks.find((c) => c.name === 'AGY settings.json');
+    assert.equal(settingsCheck?.ok, true);
   } finally {
     rmSync(fakeHome, { recursive: true, force: true });
   }

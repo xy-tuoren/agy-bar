@@ -2,44 +2,37 @@
 
 All notable changes to **agy-bar** are documented here.
 
-## [0.10.1] - 2026-11-26
-
-### Improved
-- **Compact `~` Workspace Paths (`dirStyle: "short" | "parent" | "name"`)**:
-  - Top-left workspace display now defaults to a clean home-abbreviated path (`~/code`, `~/code/agy-bar`, or `~/…/client/agy-bar` for deep directories), automatically falling back to just the folder name on narrow split panes.
-  - Configurable anytime via `agy-bar config set dirStyle short | parent | name`.
-
-## [0.10.0] - 2026-11-26
+## [0.9.0] - 2026-11-26
 
 ### Added
 - **Live Dynamic Pricing Cache & 24h Background SWR Sync (`src/pricing.mjs`, `src/pricing-sync.mjs`, `agy-bar pricing`)**:
   - Calibrated built-in fallback rates to real public API pricing for **Gemini 4 Neon** (`$3/$15/$0.15`), **Carbon / Argon** (`$2/$10/$0.10`), **Hydrogen** (`$1.5/$7.5/$0.075`), **Gemini 3.8 Flash** (`$0.75/$3.75`), and **Claude Opus 4.5–4.8** (`$5/$25/$0.50`), **Sonnet** (`$3/$15`), **Haiku 4.5** (`$1/$5`).
   - Added 3-tier `< 0.1ms` local pricing lookup (`config.customPricing` → synced `~/.gemini/config/agy-bar/pricing-cache.json` → built-in calibrated rates), memoized by file `mtimeMs`.
-  - Added zero-dependency proxy-aware HTTPS sync (`models.dev/api.json` primary with automatic `LiteLLM` fallback, `gzip`, `ETag` `304`, sanity bounds, and atomic writes; works in China without TUN via local HTTP CONNECT proxy).
-  - Enabled non-blocking 24h background Stale-While-Revalidate (`pricingAutoSync: true`, single-flight 6h failure backoff; opt out anytime via `agy-bar config set pricingAutoSync off`). Zero account credentials, never blocks statusline rendering.
+  - Added zero-dependency proxy-aware HTTPS sync (`models.dev/api.json` primary with automatic `LiteLLM` fallback, `gzip`, `ETag` `304`, sanity bounds, and atomic writes; works without TUN via local HTTP CONNECT proxy).
+  - Enabled non-blocking 24h background Stale-While-Revalidate (`pricingAutoSync: true`, single-flight 6h failure backoff; opt out anytime via `agy-bar config set pricingAutoSync off`).
   - Added `agy-bar pricing show | sync | set | reset` CLI commands.
-
-## [0.9.1] - 2026-11-26
+- **Compact `~` Workspace Paths (`dirStyle: "short" | "parent" | "name"`)**:
+  - Top-left workspace display now defaults to a clean home-abbreviated path (`~/code`, `~/code/agy-bar`, or `~/…/client/agy-bar` for deep directories), automatically falling back to folder name on narrow split panes.
+- **Automatic Cross-Terminal 256-Color & Light-Theme Adaptation (`src/ansi.mjs`, `src/stats.mjs`, `src/monitor.mjs`)**:
+  - Automatically downscales 24-bit RGB colors to nearest xterm-256 palette (`\x1b[38;5;Nm`) in macOS `Terminal.app` (`Apple_Terminal`) and `tmux` / `screen` / SSH terminals without `COLORTERM=truecolor`, and honors `NO_COLOR` and `TERM=dumb`.
+  - Added dedicated light-mode heatmap palettes when using `slate-light`, and shrunk `agy-bar stats` card grid width to `77` cols so it fits cleanly inside standard 80-column terminals without wrapping.
 
 ### Improved
 - **Cleaner Two-Line Information Architecture & Calmer Palette (`src/render.mjs`)**:
-  - **Line 1 (Identity + Cumulative Overview)**: Removed idle `? for shortcuts` clutter so workspace, Git branch, and `PX 7897` lead cleanly; busy state lights up a compact `● 30s · esc` indicator. Merged daily tokens and daily cost into one cohesive `DAY 188M/$18.4 · WK 837M · MO 902M · ALL 931M` strip with a calm neutral palette so green/amber/red stay reserved for live health signals.
-  - **Line 2 (Live Session Left, Account Quotas Right)**: Placed the current conversation's estimated spend (`~$1.24`) alongside `CTX`, `CACHE`, and `TTFT·t/s` on the left, keeping the right side dedicated exclusively to steady `5h` / `7d` quota gauges even on 116-column split panes.
+  - **Line 1 (Identity + Cumulative Overview)**: Removed idle `? for shortcuts` clutter so compact workspace path, Git branch, and `PX 7897` lead cleanly; busy state lights up a compact `● 30s · esc` indicator. Merged daily tokens and daily cost into one cohesive `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M` strip with a calm neutral palette so green/amber/red stay reserved for live health signals.
+  - **Line 2 (Live Session Left, Account Quotas Right)**: Placed the current conversation's estimated spend (`~$0.18`) alongside `CTX`, `CACHE`, and `TTFT·t/s` on the left, keeping the right side dedicated exclusively to steady `5h` / `7d` quota gauges even on 116-column split panes.
+- **Zero-Subprocess Statusline Hot Path & Atomic Writes (`src/fs-atomic.mjs`, `tab-title.mjs`, `git.mjs`, `step-timing.mjs`, `themes.mjs`)**:
+  - Added `process.ppid === prevTabHostPid` fast path in `syncTabTitle`, 3-second `git status` cache, SQLite `.db`/`.db-wal` `mtime` stamp skip, 5-minute Windows Registry theme cache, and temp-file + `renameSync` atomic writes across all state files.
+  - Deduplicated protobuf decoder across `step-timing.mjs` and `history-scan.mjs`.
+- **`agy-bar monitor` Polish & Visual Showcase**: Fixed CJK column width alignment, aligned context bar colors with `config.colorMode`, replaced raw quota keys with friendly labels (`5h`, `7d`, `Claude 5h`), added a live `Cost` column, and added `assets/stats-preview.svg`.
 
-## [0.9.0] - 2026-11-26
-
-### Performance & Reliability
-- **Zero-Subprocess Statusline Hot Path (`tab-title.mjs`, `git.mjs`, `step-timing.mjs`, `statusline.mjs`)**:
-  - Added a `process.ppid === prevTabHostPid` fast path in `syncTabTitle` that skips spawning `ps` completely whenever neither title nor host `agy` PID changed.
-  - Added a 3-second per-session cache for `git status --porcelain` dirty checks while keeping branch reads instant via `.git/HEAD`.
-  - Added a `statSync` `.db`/`.db-wal` version-stamp (`dbStamp`) short-circuit in `readLatestStepTiming` so unchanged SQLite databases are never reopened on idle refreshes.
-  - Peeked session state once per refresh (`peekSessionState`) instead of reading the session JSON multiple times.
-- **Atomic File Writes (`src/fs-atomic.mjs`)**: Switched `config.json`, `sessions/*.json`, `usage-summary.json`, `scan-cache.json`, and captured payloads to temp-file + `renameSync` atomic replacement to eliminate race-condition corruption across concurrent `agy` terminals.
-- **Deduplicated Protobuf Decoder**: Shared `decodePbFields` between `step-timing.mjs` and `history-scan.mjs`.
-
-### Improved
-- **`agy-bar monitor` Polish (`src/monitor.mjs`)**: Fixed CJK display-width column alignment via `visibleWidth`/`clipPlain`, aligned context bar colors with `config.colorMode`, replaced raw quota keys (`gemini-5h`) with clean labels (`5h`, `7d`, `Claude 5h`), and added a live `Cost` column.
-- **Visual Showcase & CI**: Added reproducible 52-week heatmap SVG preview (`assets/stats-preview.svg`) to READMEs and expanded cross-platform CI smoke tests to cover `config show`, `proxy status --json`, and `proxy env`.
+### Fixed
+- **Self-Reinstall Guard (`src/installer.mjs`)**: Prevented `agy-bar install` invoked from the installed global shim from wiping its own runtime directory; bundled `skills/agy-bar/SKILL.md` inside `app/`.
+- **Windows Compatibility Hardening (`src/installer.mjs`, `src/proxy.mjs`, `src/shell-hook.mjs`, `src/render.mjs`, `src/telemetry.mjs`)**:
+  - Fixed `agy-bar doctor` recognizing Windows Base64-encoded `statusLine.command`.
+  - Fixed `agy-bar run` launching `.cmd`/`.bat` `agy` shims on Windows via `PATHEXT` resolution and added `windowsHide: true` to `reg` calls.
+  - Fixed PowerShell shell hook quoting `'--'` so PowerShell doesn't strip the argument separator, and added Windows PowerShell 5.1 profile detection/cleanup.
+  - Fixed case-insensitive Windows home path shortening/redaction, Windows `PATH` comparison, and BMP emoji (`⚡`) 2-column display width calculation.
 
 ## [0.8.2] - 2026-11-26
 

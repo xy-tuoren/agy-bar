@@ -42,8 +42,17 @@ export function redactPayload(payload, home = homedir()) {
       return value ? `[TITLE len=${value.length}]` : value;
     }
     let out = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '***@***');
-    if (home && out.includes(home)) {
-      out = out.split(home).join('~');
+    if (home) {
+      const variants = [...new Set([home, home.replace(/\\/g, '/')])].filter(Boolean);
+      const isWinHome = process.platform === 'win32' || /^[a-zA-Z]:[\\/]/.test(home);
+      for (const variant of variants) {
+        if (isWinHome) {
+          const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          out = out.replace(new RegExp(escaped, 'gi'), '~');
+        } else if (out.includes(variant)) {
+          out = out.split(variant).join('~');
+        }
+      }
     }
     return out;
   };

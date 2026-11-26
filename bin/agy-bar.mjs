@@ -108,7 +108,7 @@ export const HELP_TEXT = [
   `    bar-style <style>     Switch bar style (${BAR_STYLE_NAMES.join(' | ')})`,
   '    enable <items...>     Enable items (ttft, speed, dir, vim, cost, session, contextDelta, ...)',
   '    disable <items...>    Disable items',
-  `    set <key> <value>...  Set colorMode (${COLOR_MODES.join('|')}), barWidth, ttftWarnSec, dbTiming, ledger`,
+  `    set <key> <value>...  Set colorMode (${COLOR_MODES.join('|')}), dirStyle (short|parent|name), barWidth, ttftWarnSec, dbTiming, pricingAutoSync, ledger`,
   '    reset                 Restore default settings',
   '',
   '  stats [period] [opts]   Full-history token dashboard, terminal heatmap & API cost estimate',
@@ -267,8 +267,9 @@ export async function main(argv = process.argv.slice(2)) {
     if (result.shimPath) {
       console.log(`Installed global CLI command: ${result.shimPath}`);
       const shimDir = dirname(result.shimPath);
-      const pathDirs = String(process.env.PATH || '').split(delimiter).filter(Boolean);
-      const onPath = pathDirs.some((p) => resolve(p) === resolve(shimDir));
+      const pathDirs = String(process.env.PATH || process.env.Path || '').split(delimiter).filter(Boolean);
+      const normPath = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
+      const onPath = pathDirs.some((p) => normPath(p) === normPath(shimDir));
       if (!onPath) {
         console.log(`Note: add ${shimDir} to your PATH to run "agy-bar" directly.`);
       }
@@ -884,9 +885,17 @@ async function handlePricingCommand(args) {
 
   if (sub === 'reset') {
     const { flags, positional } = parseFlags(rest);
+    const invalidateSummary = () => {
+      try {
+        rmSync(usageSummaryPath(), { force: true });
+      } catch {
+        // Ignore cleanup errors.
+      }
+    };
     if (flags.cache) {
       rmSync(pricingCachePath(), { force: true });
       clearPricingMemo();
+      invalidateSummary();
       console.log('Cleared synced pricing cache (reverted to built-in calibrated rates).');
       return;
     }
@@ -896,11 +905,13 @@ async function handlePricingCommand(args) {
       delete nextCustom[target];
       saveConfig({ ...cfg, customPricing: nextCustom });
       clearPricingMemo();
+      invalidateSummary();
       console.log(`Removed custom pricing override for "${target}".`);
       return;
     }
     saveConfig({ ...cfg, customPricing: {} });
     clearPricingMemo();
+    invalidateSummary();
     console.log(`Cleared all custom pricing overrides (${BUILTIN_RATES.length} built-in fallback rates active).`);
     return;
   }

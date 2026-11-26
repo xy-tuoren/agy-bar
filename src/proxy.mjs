@@ -1,5 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 export const PROXY_MODES = Object.freeze(['auto', 'manual', 'off']);
@@ -288,8 +290,57 @@ function defaultExecCmd(cmd, args) {
   return execFileSync(cmd, args, {
     encoding: 'utf8',
     timeout: 1500,
+    windowsHide: true,
     stdio: ['ignore', 'pipe', 'ignore'],
   });
+}
+
+export function resolveSpawnTarget(
+  executable,
+  { platform = process.platform, env = process.env, fileExists = existsSync } = {},
+) {
+  if (platform !== 'win32') {
+    return { command: executable, shell: false };
+  }
+
+  const trimmed = String(executable || '').trim();
+  if (/\.(?:cmd|bat)$/i.test(trimmed)) {
+    return { command: trimmed, shell: true };
+  }
+  if (/\.(?:exe|com)$/i.test(trimmed)) {
+    return { command: trimmed, shell: false };
+  }
+
+  // Resolve bare executable names along Windows PATH + PATHEXT so `.cmd`/`.bat` shims don't fail with ENOENT/EINVAL.
+  if (!trimmed.includes('\\') && !trimmed.includes('/')) {
+    const rawPath = env.PATH || env.Path || '';
+    const pathDirs = rawPath.split(';').map((d) => d.trim().replace(/^"|"$/g, '')).filter(Boolean);
+    const rawExt = env.PATHEXT || '.COM;.EXE;.BAT;.CMD';
+    const exts = rawExt
+      .split(';')
+      .map((e) => e.trim())
+      .filter(Boolean)
+      .sort((a, b) => {
+        const rank = (ext) => (/^\.(?:exe|com)$/i.test(ext) ? 0 : /^\.(?:cmd|bat)$/i.test(ext) ? 1 : 2);
+        return rank(a) - rank(b);
+      });
+
+    for (const dir of pathDirs) {
+      for (const ext of exts) {
+        const candidate = join(dir, `${trimmed}${ext.toLowerCase()}`);
+        const upperCandidate = join(dir, `${trimmed}${ext.toUpperCase()}`);
+        const found = fileExists(candidate) ? candidate : fileExists(upperCandidate) ? upperCandidate : null;
+        if (found) {
+          return {
+            command: found,
+            shell: /\.(?:cmd|bat)$/i.test(found),
+          };
+        }
+      }
+    }
+  }
+
+  return { command: trimmed, shell: false };
 }
 
 export function readEnvProxy(env = process.env) {
@@ -684,12 +735,13 @@ export async function launchAgyWithProxy(
 
   const childEnv = buildProxyEnv(resolved, env, { stripExisting: noProxy });
   childEnv.AGY_BAR_PROXY_WRAPPER = '1';
+  const target = resolveSpawnTarget(executable, { platform, env });
 
   return new Promise((resolve, reject) => {
-    const child = spawnFn(executable, agyArgs, {
+    const child = spawnFn(target.command, agyArgs, {
       stdio: 'inherit',
       env: childEnv,
-      shell: false,
+      shell: target.shell,
     });
 
     // Forward termination signals; let child TUI own interactive Ctrl+C (SIGINT).

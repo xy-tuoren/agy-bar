@@ -88,7 +88,7 @@ test('buildShellHookBlock generates fish and PowerShell functions with graceful 
 
   const pwsh = buildShellHookBlock('pwsh');
   assert.match(pwsh, /function agy \{/);
-  assert.match(pwsh, /run --from-hook -- @args/);
+  assert.match(pwsh, /run --from-hook '--' @args/);
   assert.match(pwsh, /Get-Command agy -CommandType Application/);
 });
 

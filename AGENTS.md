@@ -6,12 +6,14 @@ If a user asks you to install **agy-bar** into their Antigravity CLI (`agy`), fo
    - Run `node -v` and confirm Node.js is **20.0.0 or newer**.
    - If Node.js is missing or older than 20, stop and inform the user; do **not** install or upgrade Node.js automatically.
 
-2. **Obtain the latest `main` code cleanly**
-   - If you are already inside a clean `agy-bar` clone on `main` pointing to `xy-tuoren/agy-bar` with an empty `git status --porcelain`, run `git pull --ff-only origin main`.
-   - Otherwise clone fresh into a clean directory (e.g. `~/agy-bar` on macOS/Linux/WSL or `%USERPROFILE%\agy-bar` on Windows):
-     ```sh
-     git clone https://github.com/xy-tuoren/agy-bar.git ~/agy-bar
-     ```
+2. **Choose installation method**
+   - **Recommended (via npm, zero clone):** run `npx -y agy-bar install` (or `npx -y agy-bar install --proxy-hook` if the user wants the shell hook below) and verify with `agy-bar doctor`.
+   - **Or from GitHub `main`:**
+     - If you are already inside a clean `agy-bar` clone on `main` pointing to `xy-tuoren/agy-bar` with an empty `git status --porcelain`, run `git pull --ff-only origin main`.
+     - Otherwise clone fresh into a clean directory (e.g. `~/agy-bar` on macOS/Linux/WSL or `%USERPROFILE%\agy-bar` on Windows):
+       ```sh
+       git clone https://github.com/xy-tuoren/agy-bar.git ~/agy-bar
+       ```
 
 3. **Ask about the optional no-TUN proxy shell hook, then run the installer & self-check**
    - Before running `install`, briefly ask the user whether they also want `agy-bar` to add a 7-line managed `agy()` function to their shell rc (`~/.zshrc` / `~/.bashrc` / `config.fish`) so typing plain `agy` automatically uses their local proxy (Clash/Surge/v2ray) without TUN mode (removable anytime via `agy-bar proxy unhook` or `uninstall`).

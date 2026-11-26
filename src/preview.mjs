@@ -192,13 +192,22 @@ export function buildPreviewOutput({
       name === 'warning' || name === 'critical'
         ? { branch: 'feat/statusline', dirty: true }
         : { branch: 'main', dirty: false };
+    const termEnv = {
+      ...(process.env.TERM ? { TERM: process.env.TERM } : {}),
+      ...(process.env.COLORTERM ? { COLORTERM: process.env.COLORTERM } : {}),
+      ...(process.env.TERM_PROGRAM ? { TERM_PROGRAM: process.env.TERM_PROGRAM } : {}),
+      ...(process.env.WT_SESSION ? { WT_SESSION: process.env.WT_SESSION } : {}),
+      ...(process.env.KITTY_WINDOW_ID ? { KITTY_WINDOW_ID: process.env.KITTY_WINDOW_ID } : {}),
+      ...(process.env.COLORFGBG ? { COLORFGBG: process.env.COLORFGBG } : {}),
+      ...(name === 'normal' ? { HTTPS_PROXY: 'http://127.0.0.1:7897' } : {}),
+    };
     const rendered = renderStatusline(payload, {
       config: cfg,
       color,
       git,
       telemetry: SAMPLE_TELEMETRY[name],
       usageSummary: SAMPLE_USAGE_SUMMARY,
-      env: name === 'normal' ? { HTTPS_PROXY: 'http://127.0.0.1:7897' } : {},
+      env: termEnv,
       home: '/Users/dev',
     });
     const rule = '─'.repeat(Math.max(12, width - 2));

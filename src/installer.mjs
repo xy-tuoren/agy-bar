@@ -1,6 +1,6 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configDir, configPath, DEFAULT_CONFIG, loadConfig, PRESETS, saveConfig } from './config.mjs';
 import { SAMPLE_PAYLOADS } from './preview.mjs';
@@ -98,8 +98,41 @@ export function uninstallCliShim({ home = homedir(), platform = process.platform
   }
 }
 
-function copyRuntimeFiles(sourceRoot, destAppDir) {
-  rmSync(destAppDir, { recursive: true, force: true });
+function normalizeDirPath(p, platform = process.platform) {
+  let target;
+  try {
+    target = realpathSync(p);
+  } catch {
+    target = resolve(p);
+  }
+  return platform === 'win32' ? target.toLowerCase() : target;
+}
+
+export function isAgyBarCommand(command, backup = null) {
+  if (typeof command !== 'string' || !command.trim()) return false;
+  if (command.includes('agy-bar')) return true;
+  if (backup?.installedCommand && command === backup.installedCommand) return true;
+
+  // Windows buildCommand() base64-encodes the file:// URL for cmd /c safety.
+  const b64Match = /Buffer\.from\('([A-Za-z0-9+/=]+)','base64'\)/.exec(command);
+  if (b64Match) {
+    try {
+      const decoded = Buffer.from(b64Match[1], 'base64').toString('utf8');
+      if (decoded.includes('agy-bar')) return true;
+    } catch {
+      // Ignore malformed base64.
+    }
+  }
+  return false;
+}
+
+function copyRuntimeFiles(sourceRoot, destAppDir, platform = process.platform) {
+  // Never wipe destAppDir when re-running `agy-bar install` from the installed runtime itself.
+  if (normalizeDirPath(sourceRoot, platform) === normalizeDirPath(destAppDir, platform)) {
+    return;
+  }
+
+  rmSync(destAppDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   mkdirSync(join(destAppDir, 'src'), { recursive: true });
   mkdirSync(join(destAppDir, 'bin'), { recursive: true });
 
@@ -110,6 +143,12 @@ function copyRuntimeFiles(sourceRoot, destAppDir) {
     if (entry.endsWith('.mjs')) {
       copyFileSync(join(sourceRoot, 'src', entry), join(destAppDir, 'src', entry));
     }
+  }
+
+  const skillSource = join(sourceRoot, 'skills', 'agy-bar', 'SKILL.md');
+  if (existsSync(skillSource)) {
+    mkdirSync(join(destAppDir, 'skills', 'agy-bar'), { recursive: true });
+    copyFileSync(skillSource, join(destAppDir, 'skills', 'agy-bar', 'SKILL.md'));
   }
 }
 
@@ -129,7 +168,10 @@ export function installAgyBar({
 } = {}) {
   let skillDest = null;
   if (withSkill) {
-    skillDest = installSkill({ home, sourcePath: join(sourceRoot, 'skills', 'agy-bar', 'SKILL.md') });
+    const skillSource = join(sourceRoot, 'skills', 'agy-bar', 'SKILL.md');
+    if (existsSync(skillSource)) {
+      skillDest = installSkill({ home, sourcePath: skillSource });
+    }
   }
 
   const appDir = installedAppDir(home);
@@ -139,7 +181,7 @@ export function installAgyBar({
   const backupPath = backupFilePath(home);
   const cfgPath = configPath(home);
 
-  copyRuntimeFiles(sourceRoot, appDir);
+  copyRuntimeFiles(sourceRoot, appDir, platform);
 
   let shimPath = null;
   let shimWarning = null;
@@ -239,8 +281,8 @@ export function uninstallAgyBar({
 
   const shimRemoved = uninstallCliShim({ home, platform });
   const hookResult = uninstallShellHook({ home, platform, env });
-  rmSync(appDir, { recursive: true, force: true });
-  rmSync(backupPath, { force: true });
+  rmSync(appDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  rmSync(backupPath, { force: true, maxRetries: 3, retryDelay: 50 });
 
   let skillResult = null;
   if (removeSkill) {
@@ -248,7 +290,7 @@ export function uninstallAgyBar({
   }
 
   if (purge) {
-    rmSync(configDir(home), { recursive: true, force: true });
+    rmSync(configDir(home), { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 
   return {
@@ -307,13 +349,21 @@ export function runDoctor({ home = homedir(), platform = process.platform, env =
 
   let statusLineEnabled = false;
   let settingsDetail = 'settings.json not found';
+  let backup = null;
+  const backupPath = backupFilePath(home);
+  if (existsSync(backupPath)) {
+    try {
+      backup = readJson(backupPath);
+    } catch {
+      backup = null;
+    }
+  }
   if (existsSync(settingsPath)) {
     try {
       const settings = readJson(settingsPath);
       statusLineEnabled =
         settings.statusLine?.enabled === true &&
-        typeof settings.statusLine?.command === 'string' &&
-        settings.statusLine.command.includes('agy-bar');
+        isAgyBarCommand(settings.statusLine?.command, backup);
       settingsDetail = statusLineEnabled
         ? 'statusLine.enabled = true (agy-bar active)'
         : settings.statusLine
