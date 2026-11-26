@@ -2,6 +2,13 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.1] - 2026-11-26
+
+### Improved
+- **Cleaner Two-Line Information Architecture & Calmer Palette (`src/render.mjs`)**:
+  - **Line 1 (Identity + Cumulative Overview)**: Removed idle `? for shortcuts` clutter so workspace, Git branch, and `PX 7897` lead cleanly; busy state lights up a compact `● 30s · esc` indicator. Merged daily tokens and daily cost into one cohesive `DAY 188M/$18.4 · WK 837M · MO 902M · ALL 931M` strip with a calm neutral palette so green/amber/red stay reserved for live health signals.
+  - **Line 2 (Live Session Left, Account Quotas Right)**: Placed the current conversation's estimated spend (`~$1.24`) alongside `CTX`, `CACHE`, and `TTFT·t/s` on the left, keeping the right side dedicated exclusively to steady `5h` / `7d` quota gauges even on 116-column split panes.
+
 ## [0.9.0] - 2026-11-26
 
 ### Performance & Reliability

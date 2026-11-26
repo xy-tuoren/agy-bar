@@ -88,15 +88,16 @@ test('renders workspace dir + git, Vim badge, /compact danger hint, and optional
     },
   });
   const [line1, line2] = out.split('\n');
-  assert.match(line1, /\[NORMAL\] · esc to cancel · agy-bar \(feat\/v3\*\)/);
+  assert.match(line1, /\[NORMAL\] · ● esc · agy-bar \(feat\/v3\*\)/);
   assert.match(line2, /92\.4% \(1\.0M\) →\/compact/);
   assert.match(line2, /~\$0\.42/);
   assert.match(line2, /12m·8t/);
 });
 
-test('renders minimal DAY, WK, MO, and ALL token totals on line 1 and sheds cleanly on narrow terminals', () => {
+test('renders minimal DAY/USD, WK, MO, and ALL token totals on line 1 and sheds cleanly on narrow terminals', () => {
   const usageSummary = {
     todayTokens: 136_000_000,
+    todayCostUsd: 13.18,
     weekTokens: 810_000_000,
     monthTokens: 874_800_000,
     totalTokens: 906_200_000,
@@ -105,22 +106,23 @@ test('renders minimal DAY, WK, MO, and ALL token totals on line 1 and sheds clea
     { ...fixtures.geminiNormal, terminal_width: 140, workspace: { current_dir: '/Users/dev/agy-bar' } },
     { color: false, git: { branch: 'main', dirty: false }, usageSummary },
   ).split('\n')[0];
-  assert.match(wide, /DAY 136\.0M · WK 810\.0M · MO 874\.8M · ALL 906\.2M │ Gemini 4 Carbon · high$/);
+  assert.match(wide, /^agy-bar \(main\)/);
+  assert.match(wide, /DAY 136M\/\$13\.2 · WK 810M · MO 875M · ALL 906M │ Gemini 4 Carbon · high$/);
 
   const medium = renderStatusline(
-    { ...fixtures.geminiNormal, terminal_width: 96, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { ...fixtures.geminiNormal, terminal_width: 82, workspace: { current_dir: '/Users/dev/agy-bar' } },
     { color: false, git: { branch: 'main', dirty: false }, usageSummary },
   ).split('\n')[0];
-  assert.ok(visibleWidth(medium) <= 94);
-  assert.match(medium, /DAY 136\.0M/);
-  assert.ok(!medium.includes('MO 874.8M'));
+  assert.ok(visibleWidth(medium) <= 80);
+  assert.match(medium, /DAY 136M/);
+  assert.ok(!medium.includes('MO 875M'));
 
   const narrow = renderStatusline(
     { ...fixtures.geminiNormal, terminal_width: 52, workspace: { current_dir: '/Users/dev/agy-bar' } },
     { color: false, git: { branch: 'main', dirty: false }, usageSummary },
   ).split('\n')[0];
   assert.ok(visibleWidth(narrow) <= 50);
-  assert.ok(!narrow.includes('ALL 906.2M'));
+  assert.ok(!narrow.includes('ALL 906M'));
 });
 
 test('dashboard preset renders 2 lines with git, context bar, cache, and Gemini quota', () => {
@@ -131,7 +133,8 @@ test('dashboard preset renders 2 lines with git, context bar, cache, and Gemini 
   });
   const lines = out.split('\n');
   assert.equal(lines.length, 2);
-  assert.match(lines[0], /\? for shortcuts · git:main\*/);
+  assert.match(lines[0], /^git:main\*/);
+  assert.ok(!lines[0].includes('? for shortcuts'));
   assert.match(lines[0], /Gemini 4 Carbon · high$/);
   assert.match(lines[1], /CTX .*42\.6% \(1\.0M\)/);
   assert.match(lines[1], /CACHE 88%/);
@@ -180,7 +183,7 @@ test('working agent state displays esc to cancel and warning/danger ANSI colors 
     color: true,
   });
   const plain = stripAnsi(critical);
-  assert.match(plain, /esc to cancel/);
+  assert.match(plain, /● esc/);
   assert.match(plain, /92\.4%/);
   assert.match(plain, /8%/);
   // Danger red RGB for slate-dark is 248;113;113
@@ -299,15 +302,15 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
     },
   );
   const activeLine1 = stripAnsi(activeOut.split('\n')[0]);
-  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · esc to cancel · 1m35s · agy-bar \(main\*\) · PX 7897/);
+  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · ● 1m35s · esc · agy-bar \(main\*\) · PX 7897/);
   // Credentials must never leak into the rendered proxy badge.
   assert.ok(!activeLine1.includes('secret'));
   assert.ok(!activeLine1.includes('alice'));
 });
 
-test('renders CHAT and DAY estimated USD costs directly to the left of 5h quota on line 2', () => {
+test('merges DAY token+USD on line 1 and keeps conversation cost with session metrics on line 2 left', () => {
   const out = renderStatusline(
-    { ...fixtures.geminiNormal, terminal_width: 148, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { ...fixtures.geminiNormal, terminal_width: 144, workspace: { current_dir: '/Users/dev/agy-bar' } },
     {
       color: false,
       git: { branch: 'main', dirty: false },
@@ -315,6 +318,8 @@ test('renders CHAT and DAY estimated USD costs directly to the left of 5h quota 
       usageSummary: { todayTokens: 160_000_000, weekTokens: 800_000_000, monthTokens: 880_000_000, totalTokens: 910_000_000, todayCostUsd: 13.18 },
     },
   );
-  const line2 = out.split('\n')[1];
-  assert.match(line2, /CHAT ~\$1\.24 · DAY \$13\.18 │ 5h /);
+  const [line1, line2] = out.split('\n');
+  assert.match(line1, /DAY 160M\/\$13\.2 · WK 800M · MO 880M · ALL 910M/);
+  assert.match(line2, /TTFT 1\.8s·120t\/s │ ~\$1\.24/);
+  assert.ok(!line2.includes('DAY $'));
 });

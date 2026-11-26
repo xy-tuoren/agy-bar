@@ -27,6 +27,22 @@ export function formatTokens(value) {
   return `${(n / 1_000_000_000).toFixed(2)}B`;
 }
 
+function formatCompactTokens(value) {
+  const n = nonNegNumber(value);
+  if (n === null || n === 0) return '--';
+  if (n >= 100_000_000 && n < 999_950_000) return `${Math.round(n / 1_000_000)}M`;
+  return formatTokens(n);
+}
+
+function formatCompactUsd(amount) {
+  const v = nonNegNumber(amount);
+  if (v === null || v <= 0) return '';
+  if (v < 0.01) return `$${v.toFixed(4)}`;
+  if (v < 10) return `$${v.toFixed(2)}`;
+  if (v < 100) return `$${v.toFixed(1)}`;
+  return `$${Math.round(v)}`;
+}
+
 export function formatReset(bucket, now = Date.now()) {
   if (!bucket || typeof bucket !== 'object') return '';
   const ts = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN;
@@ -273,15 +289,26 @@ function formatSubagentsBadge(payload, show, palette, color) {
   return bold(fg(`⚡${running}`, palette.accent, color), color);
 }
 
-function formatTurnTimerBadge(isBusy, telemetry, show, palette, color) {
-  if (!isBusy || !show.turnTimer) return '';
-  const sec = nonNegNumber(telemetry?.turnElapsedSec);
-  if (sec === null || sec < 1) return '';
-  const text = formatTurnElapsed(sec);
-  if (!text) return '';
-  if (sec >= 90) return bold(fg(text, palette.danger, color), color);
-  if (sec >= 30) return fg(text, palette.warn, color);
-  return fg(text, palette.muted, color);
+function formatBusySegment(isBusy, telemetry, show, palette, color) {
+  if (!isBusy) return '';
+  const sec = show.turnTimer ? nonNegNumber(telemetry?.turnElapsedSec) : null;
+  const elapsed = sec !== null && sec >= 1 ? formatTurnElapsed(sec) : '';
+  const dotTone = sec !== null && sec >= 90 ? palette.danger : sec !== null && sec >= 30 ? palette.warn : palette.accent;
+  const parts = [];
+
+  if (elapsed) {
+    const timerText =
+      sec >= 90 ? bold(fg(elapsed, palette.danger, color), color) : sec >= 30 ? fg(elapsed, palette.warn, color) : fg(elapsed, palette.text, color);
+    parts.push(`${fg('●', dotTone, color)} ${timerText}`);
+  } else if (show.hint) {
+    parts.push(fg('●', dotTone, color));
+  }
+
+  if (show.hint) {
+    parts.push(fg('esc', palette.muted, color));
+  }
+
+  return parts.join(parts.length === 2 && !elapsed ? ' ' : fg(' · ', palette.sep, color));
 }
 
 function formatProxyBadge(env, show, palette, color) {
@@ -318,25 +345,36 @@ function formatUsageSummarySegment(
   show,
   palette,
   color,
-  { withWeek = true, withMonth = true, withTotal = true } = {},
+  { withWeek = true, withMonth = true, withTotal = true, withTodayCost = true } = {},
 ) {
   if (!usageSummary || typeof usageSummary !== 'object') return '';
   const parts = [];
   const today = nonNegNumber(usageSummary.todayTokens);
+  const todayCost = nonNegNumber(usageSummary.todayCostUsd);
   const week = nonNegNumber(usageSummary.weekTokens);
   const month = nonNegNumber(usageSummary.monthTokens);
   const total = nonNegNumber(usageSummary.totalTokens);
-  if (show.todayTokens && today !== null && today > 0) {
-    parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatTokens(today), palette.accent, color)}`);
+
+  const showDayTok = show.todayTokens && today !== null && today > 0;
+  const showDayUsd = withTodayCost && show.todayCost && todayCost !== null && todayCost > 0;
+  if (showDayTok && showDayUsd) {
+    parts.push(
+      `${fg('DAY', palette.muted, color)} ${fg(formatCompactTokens(today), palette.text, color)}${fg('/', palette.sep, color)}${fg(formatCompactUsd(todayCost), palette.accent, color)}`,
+    );
+  } else if (showDayTok) {
+    parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatCompactTokens(today), palette.text, color)}`);
+  } else if (showDayUsd) {
+    parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatCompactUsd(todayCost), palette.accent, color)}`);
   }
+
   if (withWeek && show.weekTokens && week !== null && week > 0) {
-    parts.push(`${fg('WK', palette.muted, color)} ${fg(formatTokens(week), palette.text, color)}`);
+    parts.push(`${fg('WK', palette.muted, color)} ${fg(formatCompactTokens(week), palette.text, color)}`);
   }
   if (withMonth && show.monthTokens && month !== null && month > 0) {
-    parts.push(`${fg('MO', palette.muted, color)} ${fg(formatTokens(month), palette.good, color)}`);
+    parts.push(`${fg('MO', palette.muted, color)} ${fg(formatCompactTokens(month), palette.text, color)}`);
   }
   if (withTotal && show.totalTokens && total !== null && total > 0) {
-    parts.push(`${fg('ALL', palette.muted, color)} ${fg(formatTokens(total), palette.branch, color)}`);
+    parts.push(`${fg('ALL', palette.muted, color)} ${fg(formatCompactTokens(total), palette.muted, color)}`);
   }
   return joinWithSep(parts, ' · ', palette, color);
 }
@@ -344,37 +382,36 @@ function formatUsageSummarySegment(
 function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null, telemetry = null, env = {}) {
   const { show } = config;
   const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
-  const hintText = show.hint ? (isBusy ? 'esc to cancel' : '? for shortcuts') : '';
   const vimBadge = formatVimBadge(payload, show, palette, color);
   const modeBadge = formatModeBadges(payload, show, palette, color);
   const subagentsBadge = formatSubagentsBadge(payload, show, palette, color);
-  const timerBadge = formatTurnTimerBadge(isBusy, telemetry, show, palette, color);
+  const busySeg = formatBusySegment(isBusy, telemetry, show, palette, color);
   const proxyBadge = formatProxyBadge(env, show, palette, color);
   const modelText = show.model ? formatModelName(payload?.model, show.effort) : '';
   const modelSeg = modelText ? fg(modelText, palette.muted, color) : '';
 
-  const usageFull = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: true, withMonth: true, withTotal: true });
-  const usageNoMo = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: true, withMonth: false, withTotal: true });
-  const usageDayAll = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: true });
-  const usageDayOnly = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: false });
+  const usageFull = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: true, withMonth: true, withTotal: true, withTodayCost: true });
+  const usageNoMo = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: true, withMonth: false, withTotal: true, withTodayCost: true });
+  const usageDayAll = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: true, withTodayCost: true });
+  const usageDayOnly = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: false, withTodayCost: true });
+  const usageDayTokOnly = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: false, withTodayCost: false });
 
   const rightFull = joinWithSep([usageFull, modelSeg], ' │ ', palette, color);
   const rightNoMo = joinWithSep([usageNoMo, modelSeg], ' │ ', palette, color);
   const rightDayAll = joinWithSep([usageDayAll, modelSeg], ' │ ', palette, color);
   const rightDayOnly = joinWithSep([usageDayOnly, modelSeg], ' │ ', palette, color);
+  const rightDayTokOnly = joinWithSep([usageDayTokOnly, modelSeg], ' │ ', palette, color);
   const rightModelOnly = modelSeg;
 
   const wsFull = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 24 });
   const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 12 });
   const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: false, maxBranchLen: 14 });
-  const hintSeg = hintText ? fg(hintText, palette.muted, color) : '';
-  const statusSeg = joinWithSep([hintSeg, timerBadge], ' · ', palette, color);
 
-  const leftFull = joinWithSep([vimBadge, modeBadge, subagentsBadge, statusSeg, wsFull, proxyBadge], ' · ', palette, color);
-  const leftShort = joinWithSep([vimBadge, modeBadge, subagentsBadge, statusSeg, wsShort, proxyBadge], ' · ', palette, color);
-  const leftNoProxy = joinWithSep([vimBadge, modeBadge, subagentsBadge, statusSeg, wsShort], ' · ', palette, color);
-  const leftCompact = joinWithSep([vimBadge, modeBadge, subagentsBadge, timerBadge, wsShort || gitOnly || hintSeg], ' · ', palette, color);
-  const leftMinimal = vimBadge || modeBadge || subagentsBadge || timerBadge || gitOnly || hintSeg;
+  const leftFull = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsFull, proxyBadge], ' · ', palette, color);
+  const leftShort = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort, proxyBadge], ' · ', palette, color);
+  const leftNoProxy = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort], ' · ', palette, color);
+  const leftCompact = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort || gitOnly], ' · ', palette, color);
+  const leftMinimal = vimBadge || modeBadge || subagentsBadge || busySeg || gitOnly;
 
   const pairs = [
     [leftFull, rightFull],
@@ -385,6 +422,8 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
     [leftShort, rightDayAll],
     [leftFull, rightDayOnly],
     [leftShort, rightDayOnly],
+    [leftFull, rightDayTokOnly],
+    [leftShort, rightDayTokOnly],
     [leftFull, rightModelOnly],
     [leftShort, rightModelOnly],
     [leftNoProxy, rightModelOnly],
@@ -502,18 +541,11 @@ function buildPerfSegment(opts, config, palette, color, telemetry) {
   return joinWithSep(parts, '·', palette, color);
 }
 
-function buildCostSegment(opts, config, palette, color, telemetry, usageSummary) {
-  const parts = [];
+function buildCostSegment(opts, config, palette, color, telemetry) {
+  if (!opts.withCost || !config.show.cost) return '';
   const chatCost = nonNegNumber(telemetry?.sessionCostUsd);
-  const dayCost = nonNegNumber(usageSummary?.todayCostUsd);
-  if (opts.withCost && config.show.cost && chatCost !== null && chatCost > 0) {
-    const val = fg(`~${formatUsd(chatCost)}`, palette.accent, color);
-    parts.push(opts.shortCost ? val : `${fg('CHAT', palette.muted, color)} ${val}`);
-  }
-  if (opts.withTodayCost && config.show.todayCost && dayCost !== null && dayCost > 0) {
-    parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatUsd(dayCost), palette.good, color)}`);
-  }
-  return joinWithSep(parts, ' · ', palette, color);
+  if (chatCost === null || chatCost <= 0) return '';
+  return fg(`~${formatUsd(chatCost)}`, palette.text, color);
 }
 
 function buildSessionSegment(opts, config, palette, color, telemetry) {
@@ -574,26 +606,25 @@ function renderMetricsRow(
   palette,
   color,
   now,
-  { includePrefix = false, git = null, telemetry = null, usageSummary = null } = {},
+  { includePrefix = false, git = null, telemetry = null } = {},
 ) {
   const context = payload?.context_window || {};
   const quotaEntries = selectQuotaEntries(payload?.quota, payload?.model, config.show);
   const sep = ' │ ';
 
   const stages = [
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: false, withCost: true, withTodayCost: true, shortCost: false, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: true, withTodayCost: true, shortCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: true, withTodayCost: false, shortCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: false, withCost: true, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: false, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
   ];
 
   let chosenLeft = '';
@@ -617,13 +648,13 @@ function renderMetricsRow(
     if (cacheSeg) leftParts.push(cacheSeg);
     const perfSeg = buildPerfSegment(stage, config, palette, color, telemetry);
     if (perfSeg) leftParts.push(perfSeg);
+    const costSeg = buildCostSegment(stage, config, palette, color, telemetry);
+    if (costSeg) leftParts.push(costSeg);
     const sessionSeg = buildSessionSegment(stage, config, palette, color, telemetry);
     if (sessionSeg) leftParts.push(sessionSeg);
 
     const left = joinWithSep(leftParts, stage.tight ? ' ' : sep, palette, color);
-    const costSeg = buildCostSegment(stage, config, palette, color, telemetry, usageSummary);
-    const quotaSeg = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
-    const right = joinWithSep([costSeg, quotaSeg], stage.tight ? ' ' : sep, palette, color);
+    const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
     const minGap = left && right ? 2 : 0;
     chosenLeft = left;
     chosenRight = right;
@@ -695,6 +726,7 @@ export function renderStatusline(
     cfg.show.model ||
     cfg.show.git ||
     cfg.show.todayTokens ||
+    cfg.show.todayCost ||
     cfg.show.weekTokens ||
     cfg.show.monthTokens ||
     cfg.show.totalTokens
@@ -706,7 +738,6 @@ export function renderStatusline(
     includePrefix: false,
     git: null,
     telemetry,
-    usageSummary,
   });
   if (metrics) lines.push(metrics);
 
