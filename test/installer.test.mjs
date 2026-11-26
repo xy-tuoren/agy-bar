@@ -5,8 +5,11 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   agySettingsPath,
+  buildCliShim,
   buildCommand,
+  cliShimPath,
   installAgyBar,
+  MANAGED_SHIM_MARKER,
   runDoctor,
   uninstallAgyBar,
 } from '../src/installer.mjs';
@@ -51,6 +54,9 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
     assert.equal(installed.installed, true);
     assert.ok(existsSync(installed.scriptPath));
     assert.ok(existsSync(targetSkillPath(fakeHome)));
+    assert.equal(installed.shimPath, cliShimPath(fakeHome, 'darwin'));
+    assert.ok(existsSync(installed.shimPath));
+    assert.ok(readFileSync(installed.shimPath, 'utf8').includes(MANAGED_SHIM_MARKER));
 
     const afterInstall = JSON.parse(readFileSync(settingsFile, 'utf8'));
     assert.equal(afterInstall.colorScheme, 'dark');
@@ -66,13 +72,15 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
       withSkill: true,
     });
 
-    const report = runDoctor({ home: fakeHome });
+    const report = runDoctor({ home: fakeHome, platform: 'darwin' });
     assert.equal(report.ok, true);
 
-    const removed = uninstallAgyBar({ home: fakeHome, removeSkill: true });
+    const removed = uninstallAgyBar({ home: fakeHome, platform: 'darwin', removeSkill: true });
     assert.equal(removed.uninstalled, true);
     assert.equal(removed.restored, true);
+    assert.equal(removed.shimRemoved, true);
     assert.equal(removed.skillRemoved, true);
+    assert.ok(!existsSync(cliShimPath(fakeHome, 'darwin')));
     assert.ok(!existsSync(targetSkillPath(fakeHome)));
 
     const afterUninstall = JSON.parse(readFileSync(settingsFile, 'utf8'));
@@ -109,6 +117,32 @@ test('refuses to overwrite an unrelated agy-bar skill unless --no-skill is used'
     assert.equal(res.installed, true);
     assert.equal(res.skillPath, null);
     assert.equal(readFileSync(skillFile, 'utf8'), '# My custom unrelated skill\n');
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('does not overwrite an unrelated ~/.local/bin/agy-bar file and generates Windows .cmd shim cleanly', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-shim-conflict-'));
+  try {
+    const existingShim = cliShimPath(fakeHome, 'linux');
+    mkdirSync(join(fakeHome, '.local', 'bin'), { recursive: true });
+    writeFileSync(existingShim, '#!/bin/sh\necho custom-user-script\n');
+
+    const res = installAgyBar({
+      home: fakeHome,
+      executable: '/usr/local/bin/node',
+      platform: 'linux',
+      withSkill: false,
+    });
+    assert.equal(res.installed, true);
+    assert.equal(res.shimPath, null);
+    assert.match(res.shimWarning, /unrelated file/);
+    assert.equal(readFileSync(existingShim, 'utf8'), '#!/bin/sh\necho custom-user-script\n');
+
+    const winShim = buildCliShim('C:\\Program Files\\node.exe', 'C:\\Users\\xy\\agy-bar.mjs', 'win32');
+    assert.match(winShim, /REM agy-bar: managed shim/);
+    assert.match(winShim, /"C:\\Program Files\\node\.exe" "C:\\Users\\xy\\agy-bar\.mjs" %\*/);
   } finally {
     rmSync(fakeHome, { recursive: true, force: true });
   }

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { DEFAULT_PROXY_CONFIG, isDefaultProxyConfig, normalizeProxyConfig } from './proxy.mjs';
 import { THEME_NAMES } from './themes.mjs';
 
 export const BAR_STYLES = Object.freeze({
@@ -126,6 +127,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   ttftWarnSec: 8,
   ttftDangerSec: 15,
   modelThresholds: Object.freeze({}),
+  proxy: DEFAULT_PROXY_CONFIG,
   show: PRESETS.dashboard,
 });
 
@@ -267,6 +269,7 @@ export function normalizeConfig(raw) {
   const ttftWarnSec = clampInt(input.ttftWarnSec, 1, 120, DEFAULT_CONFIG.ttftWarnSec);
   const ttftDangerSec = clampInt(input.ttftDangerSec, ttftWarnSec, 300, DEFAULT_CONFIG.ttftDangerSec);
   const modelThresholds = normalizeModelThresholds(input.modelThresholds, contextWarn, contextDanger);
+  const proxy = normalizeProxyConfig(input.proxy);
 
   const show = { ...PRESETS[preset] };
   if (input.show && typeof input.show === 'object' && !Array.isArray(input.show)) {
@@ -296,6 +299,7 @@ export function normalizeConfig(raw) {
     ttftWarnSec,
     ttftDangerSec,
     modelThresholds,
+    proxy,
     show,
   };
 }
@@ -331,6 +335,7 @@ export function serializeConfig(cfg) {
   if (normalized.ttftWarnSec !== DEFAULT_CONFIG.ttftWarnSec) out.ttftWarnSec = normalized.ttftWarnSec;
   if (normalized.ttftDangerSec !== DEFAULT_CONFIG.ttftDangerSec) out.ttftDangerSec = normalized.ttftDangerSec;
   if (Object.keys(normalized.modelThresholds).length > 0) out.modelThresholds = normalized.modelThresholds;
+  if (!isDefaultProxyConfig(normalized.proxy)) out.proxy = normalized.proxy;
   const overrides = computeShowOverrides(normalized.preset, normalized.show);
   if (Object.keys(overrides).length > 0) out.show = overrides;
   return out;
@@ -368,6 +373,7 @@ export function applyConfigCommand(args = [], path = configPath()) {
   let next = {
     ...current,
     modelThresholds: structuredClone(current.modelThresholds),
+    proxy: { ...current.proxy, bypass: [...current.proxy.bypass] },
     show: { ...current.show },
   };
 

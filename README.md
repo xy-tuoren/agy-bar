@@ -29,6 +29,7 @@ A **zero-dependency, 100% native Antigravity CLI (`agy`) statusline & telemetry 
 - **Exact First-Token Latency (`TTFT`), Streaming Speed (`tok/s`), Cost (`~$0.42`) & Delta (`+12.4K`)** — Displays first-token wait time (`TTFT 1.9s·158t/s`) separated cleanly from pure streaming decode speed (via read-only numeric step timestamps on Node 22.13+ with pure-`stdin` fallback on Node 20; toggleable via `dbTiming`), plus opt-in live session cost, duration/turns, and context delta.
 - **Full-History Terminal Token Dashboard & Heatmap (`agy-bar stats`)** — Incrementally scans local Antigravity CLI & Desktop conversation DBs in read-only mode (never reads chat text; `< 20ms` cached) to render an **All-Time / Today / Month / Year 4-card overview**, a **52-week true-color terminal activity heatmap** (`purple` / `green` / `cyan` / `amber`), streaks, per-model TTFT/speed breakdown, CLI vs Desktop split, **estimated API cost & cache savings**, and net observed quota Δ.
 - **Automatic Terminal Tab Title Sync (`● working` / `✓ idle`)** — Replaces identical `agy --dangerously-skip-permissions` tabs in Ghostty / iTerm2 / Kitty / WezTerm / macOS Terminal with live state + concise conversation title via standard OSC 0 (zero extra tokens). Supports `agy-bar title "<short topic>"` so your Agent can summarize topic shifts in ~10 tokens with zero extra API calls.
+- **No-TUN Proxy Launcher (`agy-bar run` & `agy-bar proxy`)** — Launch `agy` directly through your local Clash / Clash Verge / Surge / v2ray HTTP proxy **without enabling TUN mode**. Auto-detects macOS/Windows system proxies or active localhost proxy ports (`7897`, `7890`, `6152`, `10809`, `1087`, ...), injects standard `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` + loopback-safe `NO_PROXY`, and installs a global `~/.local/bin/agy-bar` shortcut alongside `agy`.
 - **Multi-CLI Live Monitor (`agy-bar monitor`)** — Terminal HUD tracking all concurrent `agy` sessions side by side.
 - **Redacted Payload Debugger (`agy-bar debug`)** — Captures a one-shot PII-redacted AGY JSON payload for easy troubleshooting across AGY CLI updates.
 - **Safe Install / Uninstall + `/agy-bar` Skill** — Backs up your previous `statusLine`, restores cleanly on uninstall, and optionally installs the `/agy-bar` skill.
@@ -67,65 +68,94 @@ Then **restart `agy`** to see the new statusline (in an existing session, run `/
 
 ## Commands & Customization
 
+`install` automatically places the `agy-bar` command at `~/.local/bin/agy-bar` (right next to `agy`), so you can run `agy-bar ...` directly from any terminal.
+
+### Launch `agy` Through Local Proxy Without TUN
+
+```sh
+# Zero-config launch (auto-detects macOS/Windows system proxy or Clash/Surge/v2ray port)
+agy-bar run
+agy-bar run -c --dangerously-skip-permissions
+
+# Pin your detected local proxy permanently, or set one manually
+agy-bar proxy auto
+agy-bar proxy set http://127.0.0.1:7897
+
+# Inspect effective proxy & live localhost TCP reachability, toggle on/off, or print shell exports
+agy-bar proxy status
+agy-bar proxy off
+eval "$(agy-bar proxy env)"
+
+# One-shot override or bypass
+agy-bar run --proxy http://127.0.0.1:7890 -c
+agy-bar run --no-proxy -c
+```
+
+> **Tip**: Want plain `agy` to always launch via your local proxy without TUN? Add one line to `~/.zshrc` or `~/.bashrc`:
+> ```sh
+> alias agy='agy-bar run'
+> ```
+> (Safe from infinite recursion — `agy-bar run` spawns the real `agy` binary directly.)
+
 ### Preview, Stats, Monitor & Debug
 
 ```sh
 # Preview scenarios, presets, themes & gauge styles
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --scenario all --width 116
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --preset compact --theme nord --bar-style smooth
+agy-bar preview --scenario all --width 116
+agy-bar preview --preset compact --theme nord --bar-style smooth
 
 # Full-history token dashboard, 52-week terminal heatmap & estimated API cost
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --palette green --source cli
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats all --model neon --json
+agy-bar stats
+agy-bar stats 30d --palette green --source cli
+agy-bar stats all --model neon --json
 
 # Live multi-CLI HUD
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor --once
+agy-bar monitor
+agy-bar monitor --once
 
 # Capture & inspect a PII-redacted live AGY payload
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug --capture
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug
+agy-bar debug --capture
+agy-bar debug
 
 # Set, inspect, or clear the current terminal tab title (works in Ghostty, iTerm2, Kitty, WezTerm, Terminal)
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "agy-bar v0.5 dev"
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title --clear
+agy-bar title "agy-bar v0.7 dev"
+agy-bar title
+agy-bar title --clear
 ```
 
 > **Optional: Auto-summarize tab titles on topic shifts (~10 tokens, zero extra API calls)**
 > Add this one line to your global `~/.gemini/antigravity-cli/AGENTS.md` (or project `AGENTS.md`):
 > ```text
-> When the user starts a clearly new task/topic in a long session, silently run `node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "<4-8 word concise topic>"` once to keep the terminal tab title up to date.
+> When the user starts a clearly new task/topic in a long session, silently run `agy-bar title "<4-8 word concise topic>"` once to keep the terminal tab title up to date.
 > ```
 
 ### Configuration (Takes effect immediately without restarting `agy`)
 
 ```sh
 # Presets: dashboard | compact | minimal
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config preset compact
+agy-bar config preset compact
 
 # Themes: auto | slate-dark | slate-light | ocean | nord | mono
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config theme ocean
+agy-bar config theme ocean
 
 # Gauge styles: smooth (███▍░░) | blocks (███░░░) | line (━━━───) | ascii ([###---])
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config bar-style smooth
+agy-bar config bar-style smooth
 
 # Color mode: health (unified green->amber->red) | distinct (blue CTX vs green quota)
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set colorMode health
+agy-bar config set colorMode health
 
 # Toggle items (dir, vim, git, gitDirty, contextDelta, compactHint, cacheTtl, speed, cost, session, reset, ...)
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config enable cost session contextDelta
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config disable dir speed
+agy-bar config enable cost session contextDelta
+agy-bar config disable dir speed
 
 # Per-model context thresholds, cache TTL, or ledger toggle
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set modelThreshold.claude.warn 65 modelThreshold.claude.danger 85
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set cacheTtlSec 300 ledger on
+agy-bar config set modelThreshold.claude.warn 65 modelThreshold.claude.danger 85
+agy-bar config set cacheTtlSec 300 ledger on
 
 # Diagnostics, inspect & reset
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs doctor
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config show
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config reset
+agy-bar doctor
+agy-bar config show
+agy-bar config reset
 ```
 
 ### Update & Uninstall

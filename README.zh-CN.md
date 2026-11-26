@@ -29,6 +29,7 @@
 - **精确首字时间 (`TTFT`)、纯流式速率 (`tok/s`)、可选花费 (`~$0.42`) 与上下文增量 (`+12.4K`)** — 在底栏同时展示首字等待时长与纯解码输出速率（`TTFT 1.9s·158t/s`，在 Node 22.13+ 上仅以只读模式读取本地会话数值时间戳，不读聊天正文，Node 20 自动降级为纯 `stdin` 估算，支持 `config set dbTiming off` 关闭），把「等待思考多久」和「真正吐字多快」彻底分开，并同步汇总到 `stats` 与 `monitor`。
 - **终端全量 Token 活动面板与热力图 (`agy-bar stats`)** — 只读增量扫描本机 Antigravity CLI 与桌面端全部历史会话库（不读聊天正文，带增量缓存二次运行 `< 20ms`），在终端内直接渲染 **全量 / 今日 / 本月 / 年度 4 项总览卡片**、**52 周真彩终端活动热力图**（`purple` / `green` / `cyan` / `amber` 四套渐变）、连续活跃天数、CLI 与桌面端占比、各模型 TTFT/速率排行、**参考 API 费用与缓存省钱金额**及拼车额度变化。
 - **终端标签页标题自动同步（`● 工作中` / `✓ 已完成`）** — 彻底解决 Ghostty / iTerm2 / Kitty / WezTerm 多开时标签页全叫 `agy --dangerously-skip-permissions` 的痛点：通过标准 OSC 0 自动显示状态图标 + 会话标题（零额外 Token 消耗）；同时提供 `agy-bar title "简短主题"`，让 Agent 利用已有上下文花 ~10 tokens 即可顺手更新标签摘要，零额外 API 请求。
+- **无需 TUN 模式直连代理启动器 (`agy-bar run` & `agy-bar proxy`)** — 安装时自动在 `~/.local/bin/agy-bar` 创建全局短命令（与 `agy` 同目录）。直接运行 `agy-bar run` 即可**无需开启 TUN 模式**，自动识别本机系统代理或 Clash Verge / Clash / Surge / v2ray 本地监听端口（`7897`、`7890`、`6152`、`10809`、`1087` 等），为 `agy` 注入标准代理环境变量与回环安全的 `NO_PROXY` 并透传全部参数，零二进制侵入。
 - **多 CLI 协作监视面板 (`agy-bar monitor`)** — 一屏实时监控本机同时运行的所有 `agy` 终端。
 - **脱敏抓包调试 (`agy-bar debug`)** — 支持单次自动脱敏捕获真实 `agy` payload，排查新版字段变更或提 Issue 极方便。
 - **安全安装/无损卸载 + `/agy-bar` Skill** — 自动备份原有 `statusLine`，卸载一键还原；自带 `/agy-bar` Skill，可在 `agy` 中用自然语言调整配置或查统计。
@@ -67,65 +68,94 @@ npx agy-bar install
 
 ## 常用命令与配置
 
+`install` 会自动把 `agy-bar` 短命令安装到 `~/.local/bin/agy-bar`（与 `agy` 同目录），在任意终端中直接运行 `agy-bar ...` 即可。
+
+### 无需 TUN 模式直接通过本地代理启动 `agy`
+
+```sh
+# 零配置直接启动（自动检测 macOS/Windows 系统代理或本机 Clash/Surge/v2ray 端口）
+agy-bar run
+agy-bar run -c --dangerously-skip-permissions
+
+# 将自动检测到的本地代理固定保存到配置，或手动指定端口
+agy-bar proxy auto
+agy-bar proxy set http://127.0.0.1:7897
+
+# 查看当前生效代理与本地端口连通性、临时开关、或导出当前终端环境变量
+agy-bar proxy status
+agy-bar proxy off
+eval "$(agy-bar proxy env)"
+
+# 单次指定其他代理，或临时直连绕过代理
+agy-bar run --proxy http://127.0.0.1:7890 -c
+agy-bar run --no-proxy -c
+```
+
+> **进阶技巧**：想直接敲 `agy` 就自动走本地代理（无需开 TUN）？在 `~/.zshrc` 或 `~/.bashrc` 里加一行即可：
+> ```sh
+> alias agy='agy-bar run'
+> ```
+> （安全防死循环：`agy-bar run` 会直接拉起真实 `agy` 二进制，不会触发 shell alias 递归。）
+
 ### 预览、用量统计、多 CLI 监视与抓包调试
 
 ```sh
 # 在终端实时预览各类场景、预设与主题
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --scenario all --width 116
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --preset compact --theme nord --bar-style smooth
+agy-bar preview --scenario all --width 116
+agy-bar preview --preset compact --theme nord --bar-style smooth
 
 # 查看全量历史 Token 总览卡片、52 周真彩终端热力图与 API 预估费用
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --palette green --source cli
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats all --model neon --json
+agy-bar stats
+agy-bar stats 30d --palette green --source cli
+agy-bar stats all --model neon --json
 
 # 实时监视多个并发 agy 终端
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor --once
+agy-bar monitor
+agy-bar monitor --once
 
 # 单次脱敏抓包并查看真实 AGY payload
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug --capture
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug
+agy-bar debug --capture
+agy-bar debug
 
 # 设置、查看或清除当前终端标签页标题（支持 Ghostty / iTerm2 / Kitty / WezTerm / Terminal）
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "开发 agy-bar 状态栏"
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title --clear
+agy-bar title "开发 agy-bar 状态栏"
+agy-bar title
+agy-bar title --clear
 ```
 
 > **进阶技巧：让 Agent 换话题时自动缩写标签名（仅耗 ~10 tokens，零额外 API 调用）**
 > 在你的全局 `~/.gemini/antigravity-cli/AGENTS.md`（或规则文件）里加上这一句即可：
 > ```text
-> 当用户在长对话中明显切换到新任务或新话题时，静默执行一次 `node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "<4~8字中文简短主题>"` 更新终端标签页标题。
+> 当用户在长对话中明显切换到新任务或新话题时，静默执行一次 `agy-bar title "<4~8字中文简短主题>"` 更新终端标签页标题。
 > ```
 
 ### 个性化配置（修改后下次刷新即生效，无需重启 `agy`）
 
 ```sh
 # 切换布局预设：dashboard | compact | minimal
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config preset compact
+agy-bar config preset compact
 
 # 切换主题：auto | slate-dark | slate-light | ocean | nord | mono
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config theme ocean
+agy-bar config theme ocean
 
 # 切换进度条风格：smooth (███▍░░) | blocks (███░░░) | line (━━━───) | ascii ([###---])
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config bar-style smooth
+agy-bar config bar-style smooth
 
 # 配色模式：health（左右统一健康绿→黄→红）| distinct（左侧蓝 / 右侧绿）
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set colorMode health
+agy-bar config set colorMode health
 
 # 开关单项（支持 dir、vim、cost、session、contextDelta、compactHint、cacheTtl、speed、git 等）
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config enable cost session contextDelta
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config disable dir speed
+agy-bar config enable cost session contextDelta
+agy-bar config disable dir speed
 
 # 按模型单独设告警红线，或调整缓存倒计时 / 关闭本地账本
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set modelThreshold.claude.warn 65 modelThreshold.claude.danger 85
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config set cacheTtlSec 300 ledger on
+agy-bar config set modelThreshold.claude.warn 65 modelThreshold.claude.danger 85
+agy-bar config set cacheTtlSec 300 ledger on
 
 # 自检、查看与重置
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs doctor
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config show
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs config reset
+agy-bar doctor
+agy-bar config show
+agy-bar config reset
 ```
 
 ### 更新与卸载

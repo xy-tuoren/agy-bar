@@ -2,6 +2,16 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.7.0] - 2026-11-26
+
+### Added
+- **No-TUN Proxy Launcher (`agy-bar run` & `agy-bar proxy`)**:
+  - Launch `agy` directly through your local Clash / Clash Verge / Surge / v2ray proxy **without enabling TUN mode** (`agy-bar run [agy args...]`), injecting standard `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` (uppercase + lowercase) and loopback-safe `NO_PROXY` environment variables into the spawned `agy` process.
+  - **Zero-config auto-detection (`mode: auto`)**: Automatically detects macOS system proxy (`scutil --proxy`), Windows system proxy (`HKCU\...\Internet Settings`), or live localhost proxy ports (`7897`, `7890`, `6152`, `10809`, `1087`, `20171`, `20172`, `10808`, `1080`) even when both TUN and System Proxy are turned off.
+  - **Proxy management CLI (`agy-bar proxy`)**: `status`/`check` (live TCP reachability + latency), `auto`, `set <url>`, `on`/`off`, `mode <auto|manual|off>`, `bypass <list|reset>`, `env [--sh|--fish|--pwsh]`, and `clear`, with automatic credential redaction (`user:pass@` → `***@`) and Go/gRPC HTTP CONNECT guidance.
+  - **Interactive TUI signal safety & `--no-proxy` / `--proxy <url>` overrides**: Forwards all `agy` flags verbatim (including `-c`, `--dangerously-skip-permissions`, `--help`), prints launch notices on `stderr` so piped `stdout` stays clean, and guards against recursive wrappers.
+- **Global `~/.local/bin/agy-bar` CLI Shim**: Automatically installed alongside `agy` during `agy-bar install` (with unrelated-file collision protection and clean removal on `uninstall`) so `agy-bar run`, `agy-bar proxy`, `agy-bar stats`, `agy-bar monitor`, and `agy-bar title` work directly from any terminal.
+
 ## [0.6.2] - 2026-11-26
 
 ### Added

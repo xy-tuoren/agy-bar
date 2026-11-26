@@ -1,13 +1,15 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { configDir, configPath, DEFAULT_CONFIG, loadConfig, PRESETS, saveConfig } from './config.mjs';
 import { SAMPLE_PAYLOADS } from './preview.mjs';
+import { redactProxyUrl } from './proxy.mjs';
 import { renderStatusline } from './render.mjs';
 import { installSkill, targetSkillPath, uninstallSkill } from './skill.mjs';
 
 const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url));
+export const MANAGED_SHIM_MARKER = 'agy-bar: managed shim';
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
@@ -30,8 +32,20 @@ export function installedScriptPath(home = homedir()) {
   return join(installedAppDir(home), 'src', 'statusline.mjs');
 }
 
+export function installedCliPath(home = homedir()) {
+  return join(installedAppDir(home), 'bin', 'agy-bar.mjs');
+}
+
+export function cliShimPath(home = homedir(), platform = process.platform) {
+  return join(home, '.local', 'bin', platform === 'win32' ? 'agy-bar.cmd' : 'agy-bar');
+}
+
 export function backupFilePath(home = homedir()) {
   return join(configDir(home), 'previous-statusline.json');
+}
+
+function shQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
 export function buildCommand(executable, scriptPath, platform = process.platform) {
@@ -40,8 +54,47 @@ export function buildCommand(executable, scriptPath, platform = process.platform
     const encodedUrl = Buffer.from(pathToFileURL(scriptPath).href).toString('base64');
     return `node -e import(Buffer.from('${encodedUrl}','base64').toString()).then(function(m){m.runStatusline()})`;
   }
-  const shQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
   return `${shQuote(executable)} ${shQuote(scriptPath)}`;
+}
+
+export function buildCliShim(executable, cliPath, platform = process.platform) {
+  if (platform === 'win32') {
+    return `@echo off\r\nREM ${MANAGED_SHIM_MARKER}\r\n"${executable}" "${cliPath}" %*\r\n`;
+  }
+  return `#!/bin/sh\n# ${MANAGED_SHIM_MARKER}\nexec ${shQuote(executable)} ${shQuote(cliPath)} "$@"\n`;
+}
+
+export function installCliShim({ home = homedir(), executable, cliPath = installedCliPath(home), platform = process.platform } = {}) {
+  const dest = cliShimPath(home, platform);
+  if (existsSync(dest)) {
+    const existing = readFileSync(dest, 'utf8');
+    if (!existing.includes(MANAGED_SHIM_MARKER)) {
+      return {
+        shimPath: null,
+        shimWarning: `Skipped installing CLI shim at ${dest} because an unrelated file already exists there.`,
+      };
+    }
+  }
+
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, buildCliShim(executable, cliPath, platform), 'utf8');
+  if (platform !== 'win32') {
+    chmodSync(dest, 0o755);
+  }
+  return { shimPath: dest, shimWarning: null };
+}
+
+export function uninstallCliShim({ home = homedir(), platform = process.platform } = {}) {
+  const dest = cliShimPath(home, platform);
+  if (!existsSync(dest)) return false;
+  try {
+    const content = readFileSync(dest, 'utf8');
+    if (!content.includes(MANAGED_SHIM_MARKER)) return false;
+    rmSync(dest, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function copyRuntimeFiles(sourceRoot, destAppDir) {
@@ -64,6 +117,7 @@ export function installAgyBar({
   executable = realpathSync(process.execPath),
   platform = process.platform,
   withSkill = true,
+  withShim = true,
   preset = null,
   theme = null,
   barStyle = null,
@@ -76,11 +130,20 @@ export function installAgyBar({
 
   const appDir = installedAppDir(home);
   const scriptPath = installedScriptPath(home);
+  const cliPath = installedCliPath(home);
   const settingsPath = agySettingsPath(home);
   const backupPath = backupFilePath(home);
   const cfgPath = configPath(home);
 
   copyRuntimeFiles(sourceRoot, appDir);
+
+  let shimPath = null;
+  let shimWarning = null;
+  if (withShim) {
+    const shimRes = installCliShim({ home, executable, cliPath, platform });
+    shimPath = shimRes.shimPath;
+    shimWarning = shimRes.shimWarning;
+  }
 
   // Initialize or update user config while preserving prior overrides.
   const existingCfg = existsSync(cfgPath) ? loadConfig(cfgPath) : { ...DEFAULT_CONFIG, show: { ...DEFAULT_CONFIG.show } };
@@ -119,6 +182,9 @@ export function installAgyBar({
   return {
     installed: true,
     scriptPath,
+    cliPath,
+    shimPath,
+    shimWarning,
     settingsPath,
     configPath: cfgPath,
     skillPath: skillDest,
@@ -127,7 +193,7 @@ export function installAgyBar({
   };
 }
 
-export function uninstallAgyBar({ home = homedir(), removeSkill = false, purge = false } = {}) {
+export function uninstallAgyBar({ home = homedir(), platform = process.platform, removeSkill = false, purge = false } = {}) {
   const settingsPath = agySettingsPath(home);
   const backupPath = backupFilePath(home);
   const appDir = installedAppDir(home);
@@ -155,6 +221,7 @@ export function uninstallAgyBar({ home = homedir(), removeSkill = false, purge =
     }
   }
 
+  const shimRemoved = uninstallCliShim({ home, platform });
   rmSync(appDir, { recursive: true, force: true });
   rmSync(backupPath, { force: true });
 
@@ -170,6 +237,7 @@ export function uninstallAgyBar({ home = homedir(), removeSkill = false, purge =
   return {
     uninstalled: true,
     restored,
+    shimRemoved,
     skillRemoved: Boolean(skillResult?.removed),
     purged: purge,
     message: restored
@@ -178,9 +246,10 @@ export function uninstallAgyBar({ home = homedir(), removeSkill = false, purge =
   };
 }
 
-export function runDoctor({ home = homedir() } = {}) {
+export function runDoctor({ home = homedir(), platform = process.platform } = {}) {
   const settingsPath = agySettingsPath(home);
   const scriptPath = installedScriptPath(home);
+  const shimDest = cliShimPath(home, platform);
   const cfgPath = configPath(home);
   const skillPath = targetSkillPath(home);
 
@@ -197,6 +266,14 @@ export function runDoctor({ home = homedir() } = {}) {
     name: 'Runtime installed',
     ok: runtimeExists,
     detail: runtimeExists ? scriptPath : `Not found (${scriptPath})`,
+  });
+
+  const shimExists = existsSync(shimDest);
+  checks.push({
+    name: 'CLI shim (agy-bar)',
+    ok: shimExists,
+    optional: true,
+    detail: shimExists ? shimDest : `Not installed (run "install" to create ${shimDest})`,
   });
 
   let statusLineEnabled = false;
@@ -227,10 +304,24 @@ export function runDoctor({ home = homedir() } = {}) {
   checks.push({
     name: 'Companion /agy-bar skill',
     ok: skillInstalled,
+    optional: true,
     detail: skillInstalled ? skillPath : 'Not installed (optional)',
   });
 
   const cfg = loadConfig(cfgPath);
+  const proxyDetail =
+    cfg.proxy.mode === 'off'
+      ? 'disabled (mode=off)'
+      : cfg.proxy.mode === 'manual' && cfg.proxy.url
+        ? `mode=manual · ${redactProxyUrl(cfg.proxy.url)} (run "agy-bar proxy" to test)`
+        : 'mode=auto (auto-detects local proxy on "agy-bar run")';
+  checks.push({
+    name: 'No-TUN proxy launcher',
+    ok: true,
+    optional: true,
+    detail: proxyDetail,
+  });
+
   const sampleOutput = renderStatusline(SAMPLE_PAYLOADS.normal, {
     config: cfg,
     color: false,
@@ -243,7 +334,7 @@ export function runDoctor({ home = homedir() } = {}) {
   });
 
   return {
-    ok: checks.every((c) => c.ok || c.name.includes('skill')),
+    ok: checks.every((c) => c.ok || c.optional),
     checks,
   };
 }

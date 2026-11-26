@@ -1,35 +1,38 @@
 ---
 name: agy-bar
-description: Inspect and customize the agy-bar statusline, set concise terminal tab titles, check local CLI usage stats and estimated API costs, monitor concurrent CLI sessions, or debug payloads for Antigravity CLI. Use when the user asks to configure agy-bar, rename/summarize the terminal tab title, switch themes/presets/colorMode/barStyle, toggle items, or run stats/monitor/debug.
+description: Inspect and customize the agy-bar statusline, launch agy through a local proxy without TUN mode, set concise terminal tab titles, check local CLI usage stats and estimated API costs, monitor concurrent CLI sessions, or debug payloads for Antigravity CLI. Use when the user asks to configure agy-bar, set up or check no-TUN proxy for agy, rename/summarize the terminal tab title, switch themes/presets/colorMode/barStyle, toggle items, or run stats/monitor/debug.
 ---
 <!-- agy-bar: managed skill -->
 
 # agy-bar Guide
 
-Use the installed `agy-bar` CLI helper to manage `~/.gemini/config/agy-bar/config.json`, update terminal tab titles, and inspect local telemetry. Never edit unrelated Antigravity CLI settings.
+Use the installed `agy-bar` CLI helper to manage `~/.gemini/config/agy-bar/config.json`, configure the no-TUN proxy launcher, update terminal tab titles, and inspect local telemetry. Never edit unrelated Antigravity CLI settings.
 
 ## CLI Entrypoint
 
 ```sh
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>
+agy-bar <command>   # installed at ~/.local/bin/agy-bar (or: node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>)
 ```
 
 ## Common Commands
 
 | Intent | Command |
 | --- | --- |
-| Set concise tab title (~10 tokens) | `... title "<4-8 char concise topic>"` |
-| Clear custom tab title | `... title --clear` |
-| Configure tab title sync | `... config set tabTitle on\|off tabTitleSource auto\|title\|dir\|title+dir` |
-| Show current settings | `... config show` |
-| Switch preset / theme / bar style | `... config preset ...` / `... config theme ...` / `... config bar-style ...` |
-| Switch gauge color mode | `... config set colorMode health \| distinct` |
-| Show / hide elements | `... config enable cost session contextDelta` / `... config disable dir ttft speed` |
-| Tune alerts or timing | `... config set ttftWarnSec 8 ttftDangerSec 15 dbTiming on` |
-| Full-history token heatmap & stats | `... stats [today\|7d\|30d\|all] [--source all\|cli\|desktop\|ledger] [--palette purple\|green\|cyan\|amber]` |
-| Multi-CLI live monitor | `... monitor [--once]` |
-| Redacted payload debug | `... debug --capture` then `... debug` |
-| Preview / Diagnostics | `... preview --scenario all` / `... doctor` |
+| Launch `agy` via local proxy (no TUN) | `agy-bar run [agy args...]` (e.g. `agy-bar run -c --dangerously-skip-permissions`) |
+| Auto-detect / set / check no-TUN proxy | `agy-bar proxy auto` / `agy-bar proxy set http://127.0.0.1:7897` / `agy-bar proxy status` |
+| Toggle proxy or print shell exports | `agy-bar proxy on\|off` / `agy-bar proxy env [--sh\|--fish\|--pwsh]` |
+| Set concise tab title (~10 tokens) | `agy-bar title "<4-8 char concise topic>"` |
+| Clear custom tab title | `agy-bar title --clear` |
+| Configure tab title sync | `agy-bar config set tabTitle on\|off tabTitleSource auto\|title\|dir\|title+dir` |
+| Show current settings | `agy-bar config show` |
+| Switch preset / theme / bar style | `agy-bar config preset ...` / `agy-bar config theme ...` / `agy-bar config bar-style ...` |
+| Switch gauge color mode | `agy-bar config set colorMode health \| distinct` |
+| Show / hide elements | `agy-bar config enable cost session contextDelta` / `agy-bar config disable dir ttft speed` |
+| Tune alerts or timing | `agy-bar config set ttftWarnSec 8 ttftDangerSec 15 dbTiming on` |
+| Full-history token heatmap & stats | `agy-bar stats [today\|7d\|30d\|all] [--source all\|cli\|desktop\|ledger] [--palette purple\|green\|cyan\|amber]` |
+| Multi-CLI live monitor | `agy-bar monitor [--once]` |
+| Redacted payload debug | `agy-bar debug --capture` then `agy-bar debug` |
+| Preview / Diagnostics | `agy-bar preview --scenario all` / `agy-bar doctor` |
 
 ## Toggleable Items
 
@@ -37,6 +40,6 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>
 
 ## Workflow
 
-1. Run `config show` first if current preferences are unclear.
-2. When summarizing a terminal tab title, condense the active topic into 4–8 Chinese chars (or 3–5 English words) directly from current context and run `... title "<summary>"` without extra LLM calls.
+1. Run `agy-bar config show` (or `agy-bar proxy status`) first if current preferences are unclear.
+2. When summarizing a terminal tab title, condense the active topic into 4–8 Chinese chars (or 3–5 English words) directly from current context and run `agy-bar title "<summary>"` without extra LLM calls.
 3. Configuration changes take effect on the next statusline refresh without restarting `agy`.
