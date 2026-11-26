@@ -259,7 +259,7 @@ test('renders Gemini 4 Neon, 5-min cache TTL countdown, tok/s speed, context del
 
 test('renders active proxy badge and on-demand work-state badges (turn timer, subagents, PLAN/SANDBOX)', () => {
   assert.equal(extractActiveProxyLabel({ HTTPS_PROXY: 'http://user:pass@127.0.0.1:7897' }), '7897');
-  assert.equal(extractActiveProxyLabel({ HTTP_PROXY: 'http://proxy.internal' }), 'proxy');
+  assert.equal(extractActiveProxyLabel({ HTTP_PROXY: 'http://proxy.internal' }), 'on');
   assert.equal(extractActiveProxyLabel({}), null);
 
   assert.equal(countRunningSubagents({ subagents: [{ status: 'running' }, { status: 'completed' }, { status: 'working' }] }), 2);
@@ -275,7 +275,7 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
     { ...fixtures.geminiNormal, terminal_width: 130, workspace: { current_dir: '/Users/dev/agy-bar' } },
     { color: false, git: { branch: 'main', dirty: false }, telemetry: { turnElapsedSec: 40 }, env: {} },
   ).split('\n')[0];
-  assert.ok(!idleLine.includes('↗'));
+  assert.ok(!idleLine.includes('PX '));
   assert.ok(!idleLine.includes('⚡'));
   assert.ok(!idleLine.includes('PLAN'));
   assert.ok(!idleLine.includes('SANDBOX'));
@@ -299,7 +299,7 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
     },
   );
   const activeLine1 = stripAnsi(activeOut.split('\n')[0]);
-  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · esc to cancel · 1m35s · agy-bar \(main\*\) · ↗7897/);
+  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · esc to cancel · 1m35s · agy-bar \(main\*\) · PX 7897/);
   // Credentials must never leak into the rendered proxy badge.
   assert.ok(!activeLine1.includes('secret'));
   assert.ok(!activeLine1.includes('alice'));

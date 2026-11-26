@@ -211,7 +211,7 @@ export function extractActiveProxyLabel(env = {}) {
   try {
     const parsed = new URL(candidate);
     if (!parsed.hostname) return null;
-    return parsed.port ? parsed.port : 'proxy';
+    return parsed.port ? parsed.port : 'on';
   } catch {
     return null;
   }
@@ -288,7 +288,7 @@ function formatProxyBadge(env, show, palette, color) {
   if (!show.proxy) return '';
   const label = extractActiveProxyLabel(env);
   if (!label) return '';
-  return `${fg('↗', palette.good, color)}${fg(label, palette.muted, color)}`;
+  return `${fg('PX', palette.muted, color)} ${fg(label, palette.good, color)}`;
 }
 
 function formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir = true, maxBranchLen = 22 } = {}) {

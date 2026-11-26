@@ -2,6 +2,11 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.8.1] - 2026-11-26
+
+### Changed
+- **Refined Active Proxy Badge (`PX 7897` / `PX on`)**: Updated line 1's active proxy micro-badge from `↗7897` to `PX 7897` (muted `PX` + healthy green port) so it matches the minimalist `DAY` / `WK` / `MO` / `CTX` typography consistently.
+
 ## [0.8.0] - 2026-11-26
 
 ### Added
