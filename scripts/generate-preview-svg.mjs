@@ -107,7 +107,7 @@ const darkNormal = renderStatusline(
   {
     config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'segments', colorMode: 'health' }),
     color: true,
-    git: { branch: 'main', dirty: false },
+    git: { branch: 'main', dirty: true, added: 142, removed: 38 },
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
     env: { HTTPS_PROXY: 'http://127.0.0.1:7897' },
@@ -120,7 +120,7 @@ const darkWarning = renderStatusline(
   {
     config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'segments', colorMode: 'health' }),
     color: true,
-    git: { branch: 'feat/statusline', dirty: true },
+    git: { branch: 'feat/statusline', dirty: true, added: 284, removed: 62 },
     telemetry: SAMPLE_TELEMETRY.warning,
     usageSummary: SAMPLE_USAGE_SUMMARY,
     home: '/Users/dev',
@@ -132,7 +132,7 @@ const darkCritical = renderStatusline(
   {
     config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'segments', colorMode: 'health' }),
     color: true,
-    git: { branch: 'feat/statusline', dirty: true },
+    git: { branch: 'feat/statusline', dirty: true, added: 412, removed: 118 },
     telemetry: SAMPLE_TELEMETRY.critical,
     usageSummary: SAMPLE_USAGE_SUMMARY,
     home: '/Users/dev',
@@ -155,7 +155,7 @@ const lightNormal = renderStatusline(
   {
     config: normalizeConfig({ preset: 'dashboard', theme: 'slate-light', barStyle: 'segments', colorMode: 'health' }),
     color: true,
-    git: { branch: 'main', dirty: true },
+    git: { branch: 'main', dirty: true, added: 48, removed: 12 },
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
     home: '/Users/dev',

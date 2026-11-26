@@ -28,18 +28,25 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     maybeCaptureRedactedPayload(payload);
     const prevSession = peekSessionState(payload);
     const cwd = payload?.workspace?.current_dir || payload?.cwd || null;
-    const canReuseGitDirty = Boolean(
-      config.show.gitDirty &&
+    const wantGitStatus = Boolean(config.show.gitDirty || config.show.gitDiff);
+    const canReuseGitStatus = Boolean(
+      wantGitStatus &&
         prevSession &&
         prevSession.cwd === cwd &&
         typeof prevSession.gitCheckedAt === 'number' &&
-        now - prevSession.gitCheckedAt < GIT_DIRTY_CACHE_MS,
+        now - prevSession.gitCheckedAt < GIT_DIRTY_CACHE_MS &&
+        (!config.show.gitDiff || (typeof prevSession.gitAdded === 'number' && typeof prevSession.gitRemoved === 'number')),
     );
     const git =
       config.show.git && cwd
         ? readGitInfo(cwd, {
             checkDirty: config.show.gitDirty,
-            cachedDirty: canReuseGitDirty ? Boolean(prevSession.dirty) : null,
+            checkDiff: config.show.gitDiff,
+            cachedDirty: canReuseGitStatus ? Boolean(prevSession.dirty) : null,
+            cachedDiff:
+              canReuseGitStatus && config.show.gitDiff
+                ? { added: prevSession.gitAdded, removed: prevSession.gitRemoved }
+                : null,
           })
         : null;
     const stepTiming = config.dbTiming

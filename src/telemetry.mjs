@@ -394,6 +394,8 @@ export function recordTelemetry(
     workspaceName: cwd ? basename(cwd) : prev?.workspaceName || null,
     branch: git?.branch || prev?.branch || null,
     dirty: typeof git?.dirty === 'boolean' ? git.dirty : Boolean(prev?.dirty),
+    gitAdded: typeof git?.added === 'number' ? git.added : prev?.gitAdded ?? null,
+    gitRemoved: typeof git?.removed === 'number' ? git.removed : prev?.gitRemoved ?? null,
     gitCheckedAt: git?.dirtyChecked ? now : prev?.gitCheckedAt ?? null,
     dbStamp: stepTiming?.dbStamp ?? prev?.dbStamp ?? null,
     agentState: sanitizeText(p.agent_state || '') || 'idle',

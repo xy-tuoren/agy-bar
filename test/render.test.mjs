@@ -360,3 +360,29 @@ test('merges DAY token+USD on line 1 and keeps conversation cost with session me
   assert.match(line2, /TTFT 1\.8s·120t\/s │ ~\$1\.24/);
   assert.ok(!line2.includes('DAY $'));
 });
+
+test('renders green/red Git diff line counts (+added -removed) next to branch and sheds cleanly on narrow terminals', () => {
+  const wide = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 136, workspace: { current_dir: '/Users/dev/code/agy-bar' } },
+    {
+      color: true,
+      git: { branch: 'main', dirty: true, added: 142, removed: 38 },
+      home: '/Users/dev',
+      env: { COLORTERM: 'truecolor' },
+    },
+  );
+  const plainWide = stripAnsi(wide.split('\n')[0]);
+  assert.ok(plainWide.includes('~/code/agy-bar (main* +142 -38)'));
+  assert.ok(wide.includes('\x1b[38;2;52;211;153m+142'));
+  assert.ok(wide.includes('\x1b[38;2;248;113;113m-38'));
+
+  // Clean diff (+0 -0) hides diff pill completely.
+  const clean = stripAnsi(
+    renderStatusline(
+      { ...fixtures.geminiNormal, terminal_width: 136, workspace: { current_dir: '/Users/dev/code/agy-bar' } },
+      { color: false, git: { branch: 'main', dirty: false, added: 0, removed: 0 }, home: '/Users/dev' },
+    ).split('\n')[0],
+  );
+  assert.ok(clean.includes('~/code/agy-bar (main)'));
+  assert.ok(!clean.includes('+0'));
+});

@@ -371,13 +371,30 @@ export function formatCompactPath(rawCwd, { style = 'short', maxLen = 28, home =
   return visibleWidth(tail1) <= maxLen ? tail1 : lastSeg;
 }
 
+function formatDiffCount(n) {
+  if (n < 10_000) return String(Math.trunc(n));
+  if (n < 999_950) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+export function formatGitDiffSegment(git, show, palette, color) {
+  if (!show?.gitDiff || !git) return '';
+  const added = nonNegNumber(git.added) || 0;
+  const removed = nonNegNumber(git.removed) || 0;
+  if (added === 0 && removed === 0) return '';
+  const parts = [];
+  if (added > 0) parts.push(fg(`+${formatDiffCount(added)}`, palette.good, color));
+  if (removed > 0) parts.push(fg(`-${formatDiffCount(removed)}`, palette.danger, color));
+  return parts.join(' ');
+}
+
 function formatWorkspaceGitSegment(
   payload,
   git,
   show,
   palette,
   color,
-  { withDir = true, dirStyle = 'short', maxDirLen = 28, maxBranchLen = 22, home = homedir() } = {},
+  { withDir = true, withDiff = true, dirStyle = 'short', maxDirLen = 28, maxBranchLen = 22, home = homedir() } = {},
 ) {
   const rawCwd = payload?.workspace?.current_dir || payload?.cwd || '';
   const dirName = withDir && show.dir && rawCwd ? formatCompactPath(rawCwd, { style: dirStyle, maxLen: maxDirLen, home }) : '';
@@ -387,12 +404,14 @@ function formatWorkspaceGitSegment(
     branch = `${branch.slice(0, Math.max(4, maxBranchLen - 1))}…`;
   }
   const dirtyMark = branch && show.gitDirty && git?.dirty ? fg('*', palette.warn, color) : '';
+  const diffSeg = branch && withDiff ? formatGitDiffSegment(git, show, palette, color) : '';
+  const diffSuffix = diffSeg ? ` ${diffSeg}` : '';
 
   if (dirName && branch) {
-    return `${fg(dirName, palette.text, color)} ${fg('(', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}${fg(')', palette.muted, color)}`;
+    return `${fg(dirName, palette.text, color)} ${fg('(', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}${diffSuffix}${fg(')', palette.muted, color)}`;
   }
   if (branch) {
-    return `${fg('git:', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}`;
+    return `${fg('git:', palette.muted, color)}${fg(branch, palette.branch, color)}${dirtyMark}${diffSuffix}`;
   }
   if (dirName) {
     return fg(dirName, palette.text, color);
@@ -465,6 +484,15 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
 
   const wsFull = formatWorkspaceGitSegment(payload, git, show, palette, color, {
     withDir: true,
+    withDiff: true,
+    dirStyle,
+    maxDirLen: 28,
+    maxBranchLen: 24,
+    home,
+  });
+  const wsNoDiff = formatWorkspaceGitSegment(payload, git, show, palette, color, {
+    withDir: true,
+    withDiff: false,
     dirStyle,
     maxDirLen: 28,
     maxBranchLen: 24,
@@ -472,6 +500,7 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
   });
   const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, {
     withDir: true,
+    withDiff: false,
     dirStyle: 'name',
     maxDirLen: 18,
     maxBranchLen: 12,
@@ -479,11 +508,13 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
   });
   const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, {
     withDir: false,
+    withDiff: false,
     maxBranchLen: 14,
     home,
   });
 
   const leftFull = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsFull, proxyBadge], ' · ', palette, color);
+  const leftNoDiff = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsNoDiff, proxyBadge], ' · ', palette, color);
   const leftShort = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort, proxyBadge], ' · ', palette, color);
   const leftNoProxy = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort], ' · ', palette, color);
   const leftCompact = joinWithSep([vimBadge, modeBadge, subagentsBadge, busySeg, wsShort || gitOnly], ' · ', palette, color);
@@ -491,16 +522,22 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
 
   const pairs = [
     [leftFull, rightFull],
+    [leftNoDiff, rightFull],
     [leftShort, rightFull],
     [leftFull, rightNoMo],
+    [leftNoDiff, rightNoMo],
     [leftShort, rightNoMo],
     [leftFull, rightDayAll],
+    [leftNoDiff, rightDayAll],
     [leftShort, rightDayAll],
     [leftFull, rightDayOnly],
+    [leftNoDiff, rightDayOnly],
     [leftShort, rightDayOnly],
     [leftFull, rightDayTokOnly],
+    [leftNoDiff, rightDayTokOnly],
     [leftShort, rightDayTokOnly],
     [leftFull, rightModelOnly],
+    [leftNoDiff, rightModelOnly],
     [leftShort, rightModelOnly],
     [leftNoProxy, rightModelOnly],
     [leftCompact, rightModelOnly],

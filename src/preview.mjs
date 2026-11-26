@@ -189,9 +189,11 @@ export function buildPreviewOutput({
     }
     const payload = { ...template, terminal_width: width };
     const git =
-      name === 'warning' || name === 'critical'
-        ? { branch: 'feat/statusline', dirty: true }
-        : { branch: 'main', dirty: false };
+      name === 'warning'
+        ? { branch: 'feat/statusline', dirty: true, added: 142, removed: 38 }
+        : name === 'critical'
+          ? { branch: 'feat/statusline', dirty: true, added: 318, removed: 94 }
+          : { branch: 'main', dirty: false, added: 0, removed: 0 };
     const termEnv = {
       ...(process.env.TERM ? { TERM: process.env.TERM } : {}),
       ...(process.env.COLORTERM ? { COLORTERM: process.env.COLORTERM } : {}),

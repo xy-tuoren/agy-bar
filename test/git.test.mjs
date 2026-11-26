@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { findGitDir, readBranchFromGitDir, readGitInfo } from '../src/git.mjs';
+import { countTextFileLines, findGitDir, parseNumstatOutput, parsePorcelainZ, readBranchFromGitDir, readGitInfo } from '../src/git.mjs';
 
 test('reads branch name from nested folder inside a git repository', () => {
   const root = mkdtempSync(join(tmpdir(), 'agy-bar-git-'));
@@ -52,5 +53,68 @@ test('returns null outside any git repository', () => {
     assert.equal(readBranchFromGitDir(dir), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('parses numstat/porcelain outputs and counts real tracked + untracked diff lines while skipping binaries', () => {
+  assert.deepEqual(parseNumstatOutput('12\t4\tsrc/a.mjs\n-\t-\tlogo.png\n3\t0\tsrc/b.mjs\n'), {
+    added: 15,
+    removed: 4,
+  });
+  assert.deepEqual(parsePorcelainZ(' M src/a.mjs\0?? src/new.mjs\0R  new.mjs\0old.mjs\0'), {
+    hasTrackedChanges: true,
+    untrackedPaths: ['src/new.mjs'],
+  });
+
+  const repo = mkdtempSync(join(tmpdir(), 'agy-bar-gitdiff-'));
+  try {
+    const git = (args) =>
+      execFileSync('git', ['-C', repo, ...args], {
+        encoding: 'utf8',
+        windowsHide: true,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'test',
+          GIT_AUTHOR_EMAIL: 'test@example.com',
+          GIT_COMMITTER_NAME: 'test',
+          GIT_COMMITTER_EMAIL: 'test@example.com',
+        },
+      });
+    git(['init', '-b', 'main']);
+    writeFileSync(join(repo, 'app.js'), 'line1\nline2\nline3\n');
+    git(['add', 'app.js']);
+    git(['commit', '-m', 'init']);
+
+    // Clean repo: +0 -0
+    const clean = readGitInfo(repo, { checkDirty: true, checkDiff: true });
+    assert.equal(clean.dirty, false);
+    assert.equal(clean.added, 0);
+    assert.equal(clean.removed, 0);
+
+    // Edit tracked file (-1, +2), add untracked text file (+3), and add untracked binary file (skipped).
+    writeFileSync(join(repo, 'app.js'), 'line1\nline2-edited\nline3\nline4\n');
+    writeFileSync(join(repo, 'extra.txt'), 'a\nb\nc');
+    writeFileSync(join(repo, 'blob.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02]));
+    assert.equal(countTextFileLines(join(repo, 'extra.txt')), 3);
+    assert.equal(countTextFileLines(join(repo, 'blob.bin')), 0);
+
+    const dirty = readGitInfo(repo, { checkDirty: true, checkDiff: true });
+    assert.equal(dirty.branch, 'main');
+    assert.equal(dirty.dirty, true);
+    assert.equal(dirty.added, 5); // 2 tracked + 3 untracked
+    assert.equal(dirty.removed, 1);
+
+    // Cached reuse skips subprocesses cleanly.
+    const cached = readGitInfo(repo, {
+      checkDirty: true,
+      checkDiff: true,
+      cachedDirty: true,
+      cachedDiff: { added: 99, removed: 7 },
+    });
+    assert.equal(cached.dirtyChecked, false);
+    assert.equal(cached.added, 99);
+    assert.equal(cached.removed, 7);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });

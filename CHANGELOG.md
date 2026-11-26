@@ -11,8 +11,9 @@ All notable changes to **agy-bar** are documented here.
   - Added zero-dependency proxy-aware HTTPS sync (`models.dev/api.json` primary with automatic `LiteLLM` fallback, `gzip`, `ETag` `304`, sanity bounds, and atomic writes; works without TUN via local HTTP CONNECT proxy).
   - Enabled non-blocking 24h background Stale-While-Revalidate (`pricingAutoSync: true`, single-flight 6h failure backoff; opt out anytime via `agy-bar config set pricingAutoSync off`).
   - Added `agy-bar pricing show | sync | set | reset` CLI commands.
-- **Compact `~` Workspace Paths (`dirStyle: "short" | "parent" | "name"`)**:
+- **Compact `~` Workspace Paths & Live Git Diff Line Counts (`dirStyle`, `show.gitDiff`)**:
   - Top-left workspace display now defaults to a clean home-abbreviated path (`~/code`, `~/code/agy-bar`, or `~/…/client/agy-bar` for deep directories), automatically falling back to folder name on narrow split panes.
+  - Displays live green/red workspace diff stats (`+142 -38`) right beside the Git branch (covering tracked staged/unstaged changes via `git diff --numstat HEAD` plus new untracked non-binary text files, sharing the 3s session cache and hidden automatically when clean).
 - **Automatic Cross-Terminal 256-Color & Light-Theme Adaptation (`src/ansi.mjs`, `src/stats.mjs`, `src/monitor.mjs`)**:
   - Automatically downscales 24-bit RGB colors to nearest xterm-256 palette (`\x1b[38;5;Nm`) in macOS `Terminal.app` (`Apple_Terminal`) and `tmux` / `screen` / SSH terminals without `COLORTERM=truecolor`, and honors `NO_COLOR` and `TERM=dumb`.
   - Added dedicated light-mode heatmap palettes when using `slate-light`, and shrunk `agy-bar stats` card grid width to `77` cols so it fits cleanly inside standard 80-column terminals without wrapping.

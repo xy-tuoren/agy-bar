@@ -28,7 +28,7 @@
 
 - **统一健康语义色 + 清爽分格进度条** — 左侧上下文（`CTX`）与右侧额度（`5h` / `7d`）默认统一采用 `健康绿 → 预警黄 → 危急红` 配色（也可通过 `colorMode` 切为双色区分）；默认 `segments` 分格样式（`▮▮▮▯▯▯`）在 Ghostty 等 GPU 终端下依然格界分明，共内置 8 种风格（`segments` / `squares` / `pills` / `dots` / `smooth` / `blocks` / `line` / `ascii`），完整识别 **Gemini 4 Carbon / Hydrogen / Neon / Argon** 与 **Claude** 额度池。
 - **5 分钟缓存过期倒计时** — 显示缓存命中率与剩余保活倒计时（`CACHE 88%·3m42s`），剩余 `≤ 90s` 变黄、`≤ 30s` / `exp` 变红，帮你及时续轮避免重建缓存白烧额度。
-- **清晰两行分工与克制配色** — 第一行专注「身份与累计总览」：空闲隐藏 `? for shortcuts` 噪音，直接展示精简路径 `~/code/agy-bar (main*) · PX 7897`（支持 `dirStyle: short | parent | name`），工作态按需亮起 `● 34s · esc`、`⚡2`、`PLAN`/`SANDBOX` 与 Vim 模式，右侧用低饱和配色汇总 `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M │ 模型`；第二行左侧专注当前对话（`CTX` / `CACHE` / `TTFT·t/s` / `~$0.18`），右侧稳稳留给 `5h` / `7d` 账号额度条。
+- **清晰两行分工、实时代码增删统计 (`+142 -38`) 与克制配色** — 第一行专注「身份与累计总览」：空闲隐藏 `? for shortcuts` 噪音，直接展示精简路径与当前工作区增删行数 `~/code/agy-bar (main* +142 -38) · PX 7897`（同时统计已追踪修改与未暂存新建文本文件，3 秒缓存且干净时自动隐藏，支持 `show.gitDiff` 与 `dirStyle: short | parent | name`），工作态按需亮起 `● 34s · esc`、`⚡2`、`PLAN`/`SANDBOX` 与 Vim 模式，右侧用低饱和配色汇总 `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M │ 模型`；第二行左侧专注当前对话（`CTX` / `CACHE` / `TTFT·t/s` / `~$0.18`），右侧稳稳留给 `5h` / `7d` 账号额度条。
 - **精确首字时间 (`TTFT`)、纯流式速率 (`tok/s`) 与动态参考定价 (`agy-bar pricing`)** — 分离展示首字等待时长与纯解码输出速率（`TTFT 1.9s·158t/s`，Node 22.13+ 只读数值时间戳，Node 20 自动降级，可用 `dbTiming` 开关）；费用估算采用「自定义单价 → 24h 后台缓存（`models.dev` / `LiteLLM`，自动走代理、支持 `ETag 304`）→ 内置校准表」三级查表（`< 0.1ms`），并支持 `agy -c` 重启后完整延续本对话与今日费用。
 - **终端全量 Token 活动面板与热力图 (`agy-bar stats`)** — 只读增量扫描本机 Antigravity CLI 与桌面端全部历史会话库（不读聊天正文，带增量缓存二次运行 `< 20ms`），在终端内直接渲染 **适配 80 列终端的 4 项总览卡片（全量 / 今日 / 本月 / 年度）**、**52 周活动热力图**（`purple` / `green` / `cyan` / `amber` 四套渐变，自动适配深浅主题）、连续活跃天数、CLI 与桌面端占比、各模型 TTFT/速率排行、**参考 API 费用与缓存省钱金额**及额度变化。
 - **终端标签页标题自动同步（`● 工作中` / `✓ 已完成`）** — 在 macOS / Linux / WSL 下的 Ghostty / iTerm2 / Kitty / WezTerm / macOS Terminal / VS Code 中通过标准 OSC 0/2 自动显示状态图标 + 会话标题（零额外 Token 消耗；原生 Windows 自动静默跳过）；同时提供 `agy-bar title "简短主题"`，让 Agent 利用已有上下文花 ~10 tokens 即可顺手更新标签摘要。
@@ -156,7 +156,7 @@ agy-bar config set dirStyle short
 # 配色模式：health（左右统一健康绿→黄→红）| distinct（左侧蓝 / 右侧绿）
 agy-bar config set colorMode health
 
-# 开关单项（支持 dir、vim、cost、session、contextDelta、compactHint、cacheTtl、speed、git 等）
+# 开关单项（支持 dir、vim、cost、session、contextDelta、compactHint、cacheTtl、speed、git、gitDiff 等）
 agy-bar config enable cost session contextDelta
 agy-bar config disable dir speed
 
