@@ -281,7 +281,7 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
     { color: false, git: { branch: 'main', dirty: false }, telemetry: { turnElapsedSec: 40 }, env: {} },
   ).split('\n')[0];
   assert.ok(!idleLine.includes('PX '));
-  assert.ok(!idleLine.includes('⚡'));
+  assert.ok(!idleLine.includes('SUB '));
   assert.ok(!idleLine.includes('PLAN'));
   assert.ok(!idleLine.includes('SANDBOX'));
   assert.ok(!idleLine.includes('40s'));
@@ -305,7 +305,7 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
     },
   );
   const activeLine1 = stripAnsi(activeOut.split('\n')[0]);
-  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · ● 1m35s · esc · ~\/agy-bar \(main\*\) · PX 7897/);
+  assert.match(activeLine1, /PLAN · SANDBOX · SUB 2 · ● 1m35s · esc · ~\/agy-bar \(main\*\) · PX 7897/);
   // Credentials must never leak into the rendered proxy badge.
   assert.ok(!activeLine1.includes('secret'));
   assert.ok(!activeLine1.includes('alice'));

@@ -271,7 +271,7 @@ function formatAttentionBadge(activity, show, palette, color) {
 
 function formatSubagentsBadge(activity, show, palette, color) {
   if (!show.subagents || activity.runningSubagents <= 0) return '';
-  return bold(fg(`⚡${activity.runningSubagents}`, palette.accent, color), color);
+  return `${fg('SUB', palette.muted, color)} ${bold(fg(String(activity.runningSubagents), palette.accent, color), color)}`;
 }
 
 function formatTasksBadge(activity, show, palette, color) {

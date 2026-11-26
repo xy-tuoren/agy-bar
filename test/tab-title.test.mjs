@@ -44,14 +44,14 @@ test('buildTabTitle formats working/idle prefix and supports auto, dir, title+di
     '✓ agy-bar (main)',
   );
 
-  // Idle main agent with running subagents shows ⚡N instead of ✓; reviewing/confirm shows ?; error shows ✗.
+  // Idle main agent with running subagents shows ● [N] instead of ✓; reviewing/confirm shows ?; error shows ✗.
   assert.equal(
     buildTabTitle({
       agent_state: 'idle',
       conversation_title: '并行写小说',
       subagents: [{ status: 'running' }, { status: 'running' }, { status: 'completed' }],
     }),
-    '⚡2 并行写小说',
+    '● [2] 并行写小说',
   );
   assert.equal(
     buildTabTitle({ agent_state: 'reviewing', conversation_title: '确认部署方案' }),

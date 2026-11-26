@@ -60,7 +60,7 @@ test('classifyAgentActivity prioritizes confirmation, user input, error, working
   assert.equal(subs.isMainBusy, false);
   assert.equal(subs.isActive, true);
   assert.equal(subs.runningSubagents, 3);
-  assert.equal(subs.tabPrefix, '⚡3 ');
+  assert.equal(subs.tabPrefix, '● [3] ');
   assert.equal(subs.monitorLabel, 'sub:3');
 
   // 6. Main agent idle while background tasks are running.

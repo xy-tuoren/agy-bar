@@ -132,7 +132,7 @@ export function classifyAgentActivity(payload = {}) {
       runningSubagents,
       runningTasks,
       confirmPending: false,
-      tabPrefix: `⚡${runningSubagents} `,
+      tabPrefix: `● [${runningSubagents}] `,
       statusBadge: null,
       monitorLabel: `sub:${runningSubagents}`,
     });
