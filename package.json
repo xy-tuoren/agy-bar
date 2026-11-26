@@ -8,7 +8,7 @@
   "homepage": "https://github.com/xy-tuoren/agy-bar",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xy-tuoren/agy-bar.git"
+    "url": "git+https://github.com/xy-tuoren/agy-bar.git"
   },
   "bugs": {
     "url": "https://github.com/xy-tuoren/agy-bar/issues"
@@ -34,7 +34,7 @@
     "node": ">=20.0.0"
   },
   "bin": {
-    "agy-bar": "./bin/agy-bar.mjs"
+    "agy-bar": "bin/agy-bar.mjs"
   },
   "files": [
     "AGENTS.md",

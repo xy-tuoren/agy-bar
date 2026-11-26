@@ -14,6 +14,10 @@
 
 </div>
 
+![agy-bar Ghostty 终端真机实拍](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-statusline.png)
+
+<sub>Ghostty 真机实拍：10 并发子代理（`⚡10`）、实时代码增删（`+14.3K -803`）、免 TUN 本地代理（`PX 7897`）、1.01B 累计 Token、99% 缓存倒计时、TTFT/速率、本对话预估费用与 5h/7d 额度条。</sub>
+
 ![agy-bar 真彩渲染预览](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/preview.svg)
 
 ```sh
@@ -78,12 +82,11 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 
 ### 5. 终端标签页标题自动同步 (`●` / `✓`) 与 Agent 摘要 (`agy-bar title`)
 
-彻底告别多开时所有标签页都叫 `agy --dangerously-skip-permissions` 的烦恼：在 macOS / Linux / WSL 下的 Ghostty、iTerm2、Kitty、WezTerm、Terminal.app、VS Code 中通过标准 OSC 0/2 自动同步工作状态与会话标题（零额外 Token；原生 Windows 自动安全跳过）：
+彻底告别多开时所有标签页都叫 `agy --dangerously-skip-permissions` 的烦恼：在 macOS / Linux / WSL 下的 Ghostty、iTerm2、Kitty、WezTerm、Terminal.app、VS Code 中通过标准 OSC 0/2 自动同步工作状态与精简主题（零额外 Token；原生 Windows 自动安全跳过）：
 
-```text
-之前:  agy --dangerously-skip-permissions  │  agy --dangerously-skip-permissions  │  agy --dangerously-skip-permissions
-之后:  ● 修复 Windows 兼容性               │  ✓ agy-bar (main*)                   │  ● 新增 52 周热力图统计
-```
+![agy-bar Ghostty 标签页标题真机对比](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
+
+<sub>Ghostty 标签栏真机对比：左侧已自动同步为 `● agy-bar 开源状态栏`、`📊 agy-bar Token 热力图`，右侧为未启用前的默认 `agy --dangerously-skip-per...`。</sub>
 
 > **进阶技巧 — 让 Agent 换话题时自动缩写标签名（仅耗 ~10 tokens，零额外 API 调用）**
 > 在你的全局 `~/.gemini/antigravity-cli/AGENTS.md` 里加上这一句即可：

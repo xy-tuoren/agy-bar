@@ -14,6 +14,10 @@
 
 </div>
 
+![agy-bar live Ghostty terminal screenshot](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-statusline.png)
+
+<sub>Real Ghostty capture: 10 running subagents (`⚡10`), live Git diff (`+14.3K -803`), no-TUN proxy (`PX 7897`), 1.01B cumulative tokens, 99% prompt cache TTL, TTFT & speed, live conversation spend, and 5h/7d quotas.</sub>
+
 ![agy-bar true-color statusline preview](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/preview.svg)
 
 ```sh
@@ -78,12 +82,11 @@ Running 3–5 `agy` sessions across different repos? Open `agy-bar monitor` in a
 
 ### 5. Automatic Terminal Tab Titles (`●` / `✓`) & Agent Summarization (`agy-bar title`)
 
-Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, and VS Code with live state + conversation title via standard OSC 0/2 (zero extra tokens; safely skipped on native Windows):
+Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, and VS Code with live state + concise topic title via standard OSC 0/2 (zero extra tokens; safely skipped on native Windows):
 
-```text
-Before:  agy --dangerously-skip-permissions  │  agy --dangerously-skip-permissions  │  agy --dangerously-skip-permissions
-After:   ● Fix Windows doctor check          │  ✓ agy-bar (main*)                   │  ● Add 52-week stats heatmap
-```
+![agy-bar live Ghostty tab titles comparison](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
+
+<sub>Real Ghostty tab bar: auto-synced tabs (`● agy-bar 开源状态栏`, `📊 agy-bar Token 热力图`) right next to an unmodified default `agy --dangerously-skip-per...` tab.</sub>
 
 > **Pro Tip — Auto-summarize tab titles on topic shifts (~10 tokens, zero extra API calls)**
 > Add this one line to your global `~/.gemini/antigravity-cli/AGENTS.md`:
