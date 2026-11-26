@@ -1,7 +1,7 @@
 {
   "name": "agy-bar",
-  "version": "0.4.0",
-  "description": "Zero-dependency dashboard statusline with smooth gauges, exact TTFT & tok/s speed, 5-min cache TTL countdown, usage/cost ledger, and multi-CLI monitor for Antigravity CLI (agy).",
+  "version": "0.5.0",
+  "description": "Zero-dependency dashboard statusline with smooth gauges, exact TTFT & tok/s speed, 5-min cache TTL countdown, automatic terminal tab titles, usage/cost ledger, and multi-CLI monitor for Antigravity CLI (agy).",
   "type": "module",
   "license": "MIT",
   "author": "xy-tuoren",

@@ -28,6 +28,7 @@ A **zero-dependency, 100% native Antigravity CLI (`agy`) statusline & telemetry 
 - **Smart Workspace, Vim & `/compact` Signals** — Line 1 pairs folder name with Git branch (`agy-bar (main*)`) and automatic `[NORMAL]` / `[INSERT]` Vim badges; line 2 adds an actionable `→/compact` hint when context hits your danger threshold.
 - **Exact First-Token Latency (`TTFT`), Streaming Speed (`tok/s`), Cost (`~$0.42`) & Delta (`+12.4K`)** — Displays first-token wait time (`TTFT 1.9s·158t/s`) separated cleanly from pure streaming decode speed (via read-only numeric step timestamps on Node 22.13+ with pure-`stdin` fallback on Node 20; toggleable via `dbTiming`), plus opt-in live session cost, duration/turns, and context delta.
 - **Local Usage & Cost Ledger (`agy-bar stats`)** — Aggregates `today` / `7d` / `30d` / `all` tokens, cache hit rate, average `tok/s`, **estimated public API cost & cache savings**, daily bar charts, and net observed quota Δ (handy for shared/carpool tracking).
+- **Automatic Terminal Tab Title Sync (`● working` / `✓ idle`)** — Replaces identical `agy --dangerously-skip-permissions` tabs in Ghostty / iTerm2 / Kitty / WezTerm / macOS Terminal with live state + concise conversation title via standard OSC 0 (zero extra tokens). Supports `agy-bar title "<short topic>"` so your Agent can summarize topic shifts in ~10 tokens with zero extra API calls.
 - **Multi-CLI Live Monitor (`agy-bar monitor`)** — Terminal HUD tracking all concurrent `agy` sessions side by side.
 - **Redacted Payload Debugger (`agy-bar debug`)** — Captures a one-shot PII-redacted AGY JSON payload for easy troubleshooting across AGY CLI updates.
 - **Safe Install / Uninstall + `/agy-bar` Skill** — Backs up your previous `statusLine`, restores cleanly on uninstall, and optionally installs the `/agy-bar` skill.
@@ -85,7 +86,18 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor --once
 # Capture & inspect a PII-redacted live AGY payload
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug --capture
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug
+
+# Set, inspect, or clear the current terminal tab title (works in Ghostty, iTerm2, Kitty, WezTerm, Terminal)
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "agy-bar v0.5 dev"
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title --clear
 ```
+
+> **Optional: Auto-summarize tab titles on topic shifts (~10 tokens, zero extra API calls)**
+> Add this one line to your global `~/.gemini/antigravity-cli/AGENTS.md` (or project `AGENTS.md`):
+> ```text
+> When the user starts a clearly new task/topic in a long session, silently run `node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "<4-8 word concise topic>"` once to keep the terminal tab title up to date.
+> ```
 
 ### Configuration (Takes effect immediately without restarting `agy`)
 

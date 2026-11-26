@@ -349,6 +349,16 @@ export function recordTelemetry(
   const cacheRemainingSec =
     lastActivityAt !== null ? Math.max(0, Math.round((cacheTtlMs - (now - lastActivityAt)) / 1000)) : null;
 
+  const conversationTitle = sanitizeText(p.conversation_title || '') || prev?.conversationTitle || null;
+  // If user explicitly renamed the conversation via /rename (conversation_title changed),
+  // clear any older custom tab override automatically.
+  let customTitle = prev?.customTitle || null;
+  let customTitleBase = prev?.customTitleBase ?? null;
+  if (customTitle && conversationTitle && customTitleBase && conversationTitle !== customTitleBase) {
+    customTitle = null;
+    customTitleBase = null;
+  }
+
   const nextState = {
     sessionId,
     startedAt,
@@ -359,6 +369,10 @@ export function recordTelemetry(
     dirty: typeof git?.dirty === 'boolean' ? git.dirty : Boolean(prev?.dirty),
     agentState: sanitizeText(p.agent_state || '') || 'idle',
     isBusy,
+    conversationTitle,
+    customTitle,
+    customTitleBase,
+    lastTabTitle: prev?.lastTabTitle || null,
     model: modelName,
     effort: sanitizeText(p.model?.effort || '') || null,
     usedPct,
@@ -400,7 +414,52 @@ export function recordTelemetry(
     sessionCacheSavedUsd,
     sessionDurationSec: Math.max(0, Math.round((now - startedAt) / 1000)),
     lastActivityAt,
+    conversationTitle,
+    customTitle,
+    prevTabTitle: prev?.lastTabTitle || null,
   };
+}
+
+export function updateSessionTabTitle(sessionId, tabTitle, { baseDir = configDir(homedir()) } = {}) {
+  if (!sessionId) return false;
+  const sFile = join(sessionsDir(baseDir), `${sessionId}.json`);
+  const prev = readSessionFile(sFile);
+  if (!prev) return false;
+  try {
+    writeFileSync(sFile, JSON.stringify({ ...prev, lastTabTitle: tabTitle }) + '\n', 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function setSessionCustomTitle(
+  title,
+  { sessionId = null, baseDir = configDir(homedir()), now = Date.now(), clear = false } = {},
+) {
+  const sDir = sessionsDir(baseDir);
+  let targetId = sessionId ? String(sessionId).trim().replace(/[^a-zA-Z0-9_-]/g, '') : null;
+
+  if (!targetId) {
+    const recent = listSessions({ baseDir, now });
+    targetId = recent[0]?.sessionId || 'default';
+  }
+
+  const sFile = join(sDir, `${targetId}.json`);
+  const prev = readSessionFile(sFile) || { sessionId: targetId, startedAt: now, updatedAt: now };
+  const cleaned = clear ? null : sanitizeText(title || '');
+  const next = {
+    ...prev,
+    sessionId: targetId,
+    updatedAt: now,
+    customTitle: cleaned || null,
+    customTitleBase: cleaned ? prev.conversationTitle || null : null,
+    lastTabTitle: null,
+  };
+
+  mkdirSync(sDir, { recursive: true });
+  writeFileSync(sFile, JSON.stringify(next) + '\n', 'utf8');
+  return next;
 }
 
 export function listSessions({ baseDir = configDir(homedir()), now = Date.now(), maxAgeMs = 24 * 60 * 60 * 1000, prune = false } = {}) {

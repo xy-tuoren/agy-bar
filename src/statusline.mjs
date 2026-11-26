@@ -5,7 +5,8 @@ import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
-import { maybeCaptureRedactedPayload, recordTelemetry } from './telemetry.mjs';
+import { syncTabTitle } from './tab-title.mjs';
+import { maybeCaptureRedactedPayload, recordTelemetry, updateSessionTabTitle } from './telemetry.mjs';
 
 export async function runStatusline({ stdin = process.stdin, stdout = process.stdout, env = process.env, argv = process.argv } = {}) {
   let raw = '';
@@ -14,7 +15,8 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
   }
 
   const config = loadConfig();
-  const color = !('NO_COLOR' in env) && !argv.includes('--plain') && config.theme !== 'mono';
+  const plain = argv.includes('--plain');
+  const color = !('NO_COLOR' in env) && !plain && config.theme !== 'mono';
 
   try {
     const payload = JSON.parse(raw);
@@ -28,6 +30,20 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       cacheTtlSec: config.cacheTtlSec,
       enableLedger: config.ledger,
     });
+
+    if (!plain && config.tabTitle) {
+      const tab = syncTabTitle(payload, {
+        config,
+        git,
+        customTitle: telemetry.customTitle,
+        prevTabTitle: telemetry.prevTabTitle,
+        resolveOpts: { env },
+      });
+      if (tab.changed && tab.title) {
+        updateSessionTabTitle(telemetry.sessionId, tab.title);
+      }
+    }
+
     const rendered = renderStatusline(payload, { config, color, git, telemetry, themeOptions: { env } });
     stdout.write(`${rendered}\n`);
   } catch {

@@ -2,14 +2,15 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyConfigCommand, BAR_STYLE_NAMES, COLOR_MODES, loadConfig, PRESET_NAMES } from '../src/config.mjs';
+import { applyConfigCommand, BAR_STYLE_NAMES, COLOR_MODES, loadConfig, PRESET_NAMES, TAB_TITLE_SOURCES } from '../src/config.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
 import { detectModelGroup, selectQuotaEntries } from '../src/render.mjs';
 import { aggregateStats, formatStatsReport, PERIOD_NAMES, readLedger } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
-import { armPayloadCapture, readCapturedPayload } from '../src/telemetry.mjs';
+import { buildTabTitle, writeOscTitle } from '../src/tab-title.mjs';
+import { armPayloadCapture, listSessions, readCapturedPayload, setSessionCustomTitle, updateSessionTabTitle } from '../src/telemetry.mjs';
 import { THEME_NAMES } from '../src/themes.mjs';
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
@@ -51,6 +52,11 @@ export const HELP_TEXT = [
   '    --once                Print a single snapshot and exit',
   '    --plain               Disable ANSI colors',
   '',
+  '  title [text] [options]  Set or inspect the terminal tab title for the current session',
+  '    --session <id>        Target a specific session ID (defaults to most recent active)',
+  '    --clear               Clear custom title and revert to AGY conversation_title',
+  `    (configure with: config set tabTitle on|off tabTitleSource ${TAB_TITLE_SOURCES.join('|')})`,
+  '',
   '  debug [options]         Capture or inspect a PII-redacted AGY statusLine JSON payload',
   '    --capture             Arm one-shot capture on the next AGY statusline refresh',
   '    --show                Display the last captured redacted payload (default)',
@@ -82,7 +88,8 @@ function parseFlags(args) {
     else if (arg === '--once') flags.once = true;
     else if (arg === '--capture') flags.capture = true;
     else if (arg === '--show') flags.show = true;
-    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval'].includes(arg)) {
+    else if (arg === '--clear') flags.clear = true;
+    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval', '--session'].includes(arg)) {
       const value = args[++i];
       if (!value) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -171,6 +178,62 @@ export async function main(argv = process.argv.slice(2)) {
     const cfg = loadConfig();
     const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
     await startMonitor({ intervalMs, once: Boolean(flags.once), color });
+    return;
+  }
+
+  if (command === 'title') {
+    const { flags, positional } = parseFlags(rest);
+    const cfg = loadConfig();
+    if (!flags.clear && positional.length === 0) {
+      const recent = listSessions();
+      const target = flags.session ? recent.find((s) => s.sessionId === flags.session) : recent[0];
+      if (!target) {
+        console.log('No active agy-bar session found yet.');
+        return;
+      }
+      console.log(
+        JSON.stringify(
+          {
+            sessionId: target.sessionId,
+            tabTitleEnabled: cfg.tabTitle,
+            source: cfg.tabTitleSource,
+            customTitle: target.customTitle || null,
+            conversationTitle: target.conversationTitle || null,
+            activeTabTitle: target.lastTabTitle || null,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    const rawText = positional.join(' ').trim();
+    const updated = setSessionCustomTitle(rawText, {
+      sessionId: flags.session || null,
+      clear: Boolean(flags.clear),
+    });
+    const renderedTitle = buildTabTitle(
+      {
+        agent_state: updated.agentState,
+        conversation_title: updated.conversationTitle,
+        cwd: updated.cwd,
+      },
+      {
+        config: cfg,
+        git: updated.branch ? { branch: updated.branch, dirty: updated.dirty } : null,
+        customTitle: updated.customTitle,
+      },
+    );
+    const writeRes = renderedTitle && cfg.tabTitle ? writeOscTitle(renderedTitle) : { written: false, tty: null };
+    if (writeRes.written) {
+      updateSessionTabTitle(updated.sessionId, renderedTitle);
+    }
+    console.log(
+      flags.clear
+        ? `Cleared custom tab title for session ${updated.sessionId}${renderedTitle ? ` (reverted to "${renderedTitle}")` : ''}.`
+        : `Set tab title: ${renderedTitle || updated.customTitle}${writeRes.tty ? ` (${writeRes.tty})` : ''}`,
+    );
     return;
   }
 

@@ -12,6 +12,7 @@ export const BAR_STYLES = Object.freeze({
 
 export const BAR_STYLE_NAMES = Object.freeze(Object.keys(BAR_STYLES));
 export const COLOR_MODES = Object.freeze(['health', 'distinct']);
+export const TAB_TITLE_SOURCES = Object.freeze(['auto', 'title', 'dir', 'title+dir']);
 
 export const PRESETS = Object.freeze({
   dashboard: Object.freeze({
@@ -103,6 +104,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   cacheTtlSec: 300,
   ledger: true,
   dbTiming: true,
+  tabTitle: true,
+  tabTitleSource: 'auto',
+  tabTitleMaxLen: 26,
   contextWarn: 70,
   contextDanger: 88,
   quotaWarn: 25,
@@ -221,6 +225,9 @@ export function normalizeConfig(raw) {
   const cacheTtlSec = clampInt(input.cacheTtlSec, 30, 3600, DEFAULT_CONFIG.cacheTtlSec);
   const ledger = typeof input.ledger === 'boolean' ? input.ledger : DEFAULT_CONFIG.ledger;
   const dbTiming = typeof input.dbTiming === 'boolean' ? input.dbTiming : DEFAULT_CONFIG.dbTiming;
+  const tabTitle = typeof input.tabTitle === 'boolean' ? input.tabTitle : DEFAULT_CONFIG.tabTitle;
+  const tabTitleSource = TAB_TITLE_SOURCES.includes(input.tabTitleSource) ? input.tabTitleSource : DEFAULT_CONFIG.tabTitleSource;
+  const tabTitleMaxLen = clampInt(input.tabTitleMaxLen, 10, 60, DEFAULT_CONFIG.tabTitleMaxLen);
   const contextWarn = clampInt(input.contextWarn, 10, 95, DEFAULT_CONFIG.contextWarn);
   const contextDanger = clampInt(input.contextDanger, contextWarn, 99, DEFAULT_CONFIG.contextDanger);
   const quotaDanger = clampInt(input.quotaDanger, 1, 50, DEFAULT_CONFIG.quotaDanger);
@@ -247,6 +254,9 @@ export function normalizeConfig(raw) {
     cacheTtlSec,
     ledger,
     dbTiming,
+    tabTitle,
+    tabTitleSource,
+    tabTitleMaxLen,
     contextWarn,
     contextDanger,
     quotaWarn,
@@ -279,6 +289,9 @@ export function serializeConfig(cfg) {
   if (normalized.cacheTtlSec !== DEFAULT_CONFIG.cacheTtlSec) out.cacheTtlSec = normalized.cacheTtlSec;
   if (normalized.ledger !== DEFAULT_CONFIG.ledger) out.ledger = normalized.ledger;
   if (normalized.dbTiming !== DEFAULT_CONFIG.dbTiming) out.dbTiming = normalized.dbTiming;
+  if (normalized.tabTitle !== DEFAULT_CONFIG.tabTitle) out.tabTitle = normalized.tabTitle;
+  if (normalized.tabTitleSource !== DEFAULT_CONFIG.tabTitleSource) out.tabTitleSource = normalized.tabTitleSource;
+  if (normalized.tabTitleMaxLen !== DEFAULT_CONFIG.tabTitleMaxLen) out.tabTitleMaxLen = normalized.tabTitleMaxLen;
   if (normalized.contextWarn !== DEFAULT_CONFIG.contextWarn) out.contextWarn = normalized.contextWarn;
   if (normalized.contextDanger !== DEFAULT_CONFIG.contextDanger) out.contextDanger = normalized.contextDanger;
   if (normalized.quotaWarn !== DEFAULT_CONFIG.quotaWarn) out.quotaWarn = normalized.quotaWarn;
@@ -401,6 +414,22 @@ export function applyConfigCommand(args = [], path = configPath()) {
         const parsed = parseToggle(value);
         if (parsed === null) throw new Error('dbTiming must be on/off (or true/false).');
         next.dbTiming = parsed;
+      } else if (['tabtitle', 'tab-title', 'tab_title'].includes(lower)) {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('tabTitle must be on/off (or true/false).');
+        next.tabTitle = parsed;
+      } else if (['tabtitlesource', 'tab-title-source', 'tab_title_source'].includes(lower)) {
+        const src = value.toLowerCase();
+        if (!TAB_TITLE_SOURCES.includes(src)) {
+          throw new Error(`Invalid tabTitleSource "${value}". Choose: ${TAB_TITLE_SOURCES.join(', ')}`);
+        }
+        next.tabTitleSource = src;
+      } else if (['tabtitlemaxlen', 'tab-title-max-len', 'tab_title_max_len'].includes(lower)) {
+        const n = Number(value);
+        if (!Number.isInteger(n) || n < 10 || n > 60) {
+          throw new Error('tabTitleMaxLen must be an integer between 10 and 60.');
+        }
+        next.tabTitleMaxLen = n;
       } else if (['contextwarn', 'context-warn'].includes(lower)) {
         next.contextWarn = Number(value);
       } else if (['contextdanger', 'context-danger'].includes(lower)) {

@@ -2,6 +2,13 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.5.0] - 2026-11-26
+
+### Added
+- **Automatic Terminal Tab Title Sync (`src/tab-title.mjs`)**: Automatically updates Ghostty / iTerm2 / Kitty / WezTerm / macOS Terminal tab titles via standard OSC 0 (`\x1b]0;...\x07`) with live status indicators (`●` working / `✓` idle) and `conversation_title` (zero extra tokens, auto-deduped, falls back to workspace/Git dir).
+- **Ultra-low-token Agent Tab Summarization (`agy-bar title`)**: Run `agy-bar title "<short topic>"` (or `--clear`) to set a concise custom tab title immediately from the Agent's existing context (~10 tokens, zero extra API calls). Automatically resets if the user renames the chat via `/rename`.
+- **Configurable tab title options**: `tabTitle` (`on|off`), `tabTitleSource` (`auto|title|dir|title+dir`), and `tabTitleMaxLen` (`10..60`).
+
 ## [0.4.0] - 2026-11-26
 
 ### Added

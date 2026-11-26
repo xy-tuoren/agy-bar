@@ -28,6 +28,7 @@
 - **项目目录名 + Vim 徽章 + `/compact` 提醒** — 第一行直接展示 `目录名 (分支*)` 及自动识别的 Vim `[NORMAL]` / `[INSERT]` 徽章；当上下文触及危急红线时自动提示 `→/compact`。
 - **精确首字时间 (`TTFT`)、纯流式速率 (`tok/s`)、可选花费 (`~$0.42`) 与上下文增量 (`+12.4K`)** — 在底栏同时展示首字等待时长与纯解码输出速率（`TTFT 1.9s·158t/s`，在 Node 22.13+ 上仅以只读模式读取本地会话数值时间戳，不读聊天正文，Node 20 自动降级为纯 `stdin` 估算，支持 `config set dbTiming off` 关闭），把「等待思考多久」和「真正吐字多快」彻底分开，并同步汇总到 `stats` 与 `monitor`。
 - **本地用量账本与费用估算 (`agy-bar stats`)** — 支持 `today` / `7d` / `30d` / `all` 统计、按模型/思考档位汇总、每日柱状图、**参考 API 预估费用与缓存省钱金额**，并展示本机观测到的额度净变化（非常适合拼车/多号场景对账）。
+- **终端标签页标题自动同步（`● 工作中` / `✓ 已完成`）** — 彻底解决 Ghostty / iTerm2 / Kitty / WezTerm 多开时标签页全叫 `agy --dangerously-skip-permissions` 的痛点：通过标准 OSC 0 自动显示状态图标 + 会话标题（零额外 Token 消耗）；同时提供 `agy-bar title "简短主题"`，让 Agent 利用已有上下文花 ~10 tokens 即可顺手更新标签摘要，零额外 API 请求。
 - **多 CLI 协作监视面板 (`agy-bar monitor`)** — 一屏实时监控本机同时运行的所有 `agy` 终端。
 - **脱敏抓包调试 (`agy-bar debug`)** — 支持单次自动脱敏捕获真实 `agy` payload，排查新版字段变更或提 Issue 极方便。
 - **安全安装/无损卸载 + `/agy-bar` Skill** — 自动备份原有 `statusLine`，卸载一键还原；自带 `/agy-bar` Skill，可在 `agy` 中用自然语言调整配置或查统计。
@@ -85,7 +86,18 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor --once
 # 单次脱敏抓包并查看真实 AGY payload
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug --capture
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs debug
+
+# 设置、查看或清除当前终端标签页标题（支持 Ghostty / iTerm2 / Kitty / WezTerm / Terminal）
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "开发 agy-bar 状态栏"
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title --clear
 ```
+
+> **进阶技巧：让 Agent 换话题时自动缩写标签名（仅耗 ~10 tokens，零额外 API 调用）**
+> 在你的全局 `~/.gemini/antigravity-cli/AGENTS.md`（或规则文件）里加上这一句即可：
+> ```text
+> 当用户在长对话中明显切换到新任务或新话题时，静默执行一次 `node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs title "<4~8字中文简短主题>"` 更新终端标签页标题。
+> ```
 
 ### 个性化配置（修改后下次刷新即生效，无需重启 `agy`）
 
