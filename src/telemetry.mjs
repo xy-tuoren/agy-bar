@@ -225,13 +225,24 @@ export function recordTelemetry(
       hasDbCompletedAt = true;
     }
     const dbStreamMs = nonNeg(stepTiming.streamMs);
+    const dbTotalMs = nonNeg(stepTiming.totalMs);
     const dbOut = nonNeg(stepTiming.outputTokens);
-    if (dbOut !== null && dbOut > 0 && dbStreamMs !== null && dbStreamMs >= 150) {
-      const decodeRate = dbOut / (dbStreamMs / 1000);
-      if (decodeRate > 0 && decodeRate < 5000) {
-        lastSpeedTokPerSec = Math.round(decodeRate * 10) / 10;
-        lastTurnDurationMs = nonNeg(stepTiming.totalMs) ?? dbStreamMs;
+    const dbVisibleOut = nonNeg(stepTiming.visibleOutputTokens);
+    let computedRate = null;
+    if (dbStreamMs !== null && dbStreamMs >= 400) {
+      const streamTokens = dbVisibleOut !== null && dbVisibleOut > 0 ? dbVisibleOut : dbOut;
+      if (streamTokens !== null && streamTokens > 0) {
+        const candidate = streamTokens / (dbStreamMs / 1000);
+        if (candidate > 0 && candidate < 600) computedRate = candidate;
       }
+    }
+    if (computedRate === null && dbOut !== null && dbOut > 0 && dbTotalMs !== null && dbTotalMs >= 200) {
+      const candidate = dbOut / (dbTotalMs / 1000);
+      if (candidate > 0 && candidate < 600) computedRate = candidate;
+    }
+    if (computedRate !== null) {
+      lastSpeedTokPerSec = Math.round(computedRate * 10) / 10;
+      lastTurnDurationMs = dbTotalMs ?? dbStreamMs;
     }
   }
 
@@ -256,8 +267,13 @@ export function recordTelemetry(
       }
     }
 
-    // Fallback stdin-based speed when DB streaming duration is unavailable.
-    if (!(stepTiming?.outputTokens > 0 && stepTiming?.streamMs >= 150)) {
+    // Fallback stdin-based speed when DB timing did not produce a rate.
+    const usedDbRate = Boolean(
+      stepTiming &&
+        ((stepTiming.streamMs >= 400 && (stepTiming.visibleOutputTokens > 0 || stepTiming.outputTokens > 0)) ||
+          (stepTiming.outputTokens > 0 && stepTiming.totalMs >= 200)),
+    );
+    if (!usedDbRate) {
       let durationMs = null;
       if (turnStartedAt !== null && now > turnStartedAt && now - turnStartedAt <= 600_000) {
         durationMs = now - turnStartedAt;

@@ -27,7 +27,7 @@ function pbTimestamp(sec, nanos = 0) {
 
 test('parseStepTimingMetadata extracts exact TTFT, streaming duration, completion timestamp, and output tokens', () => {
   // created_at = 1795686158.200s, first_token_at = +6.050s, finished_gen_at = +4.000s (total 10.050s)
-  const usageMsg = Buffer.concat([pbVarint(2, 2400), pbVarint(3, 600), pbVarint(5, 280000)]);
+  const usageMsg = Buffer.concat([pbVarint(2, 2400), pbVarint(3, 600), pbVarint(5, 280000), pbVarint(9, 420), pbVarint(10, 180)]);
   const meta = Buffer.concat([
     pbBytes(1, pbTimestamp(1795686158, 200_000_000)),
     pbBytes(6, pbTimestamp(1795686164, 250_000_000)),
@@ -43,6 +43,7 @@ test('parseStepTimingMetadata extracts exact TTFT, streaming duration, completio
   assert.equal(parsed.streamMs, 4000);
   assert.equal(parsed.totalMs, 10050);
   assert.equal(parsed.outputTokens, 600);
+  assert.equal(parsed.visibleOutputTokens, 420);
   assert.equal(parsed.completedAtMs, 1795686168250);
 });
 

@@ -232,6 +232,23 @@ test('prefers exact DB stepTiming TTFT and streaming decode speed over wall-cloc
     assert.equal(res.speedTokPerSec, 164.7);
     // Cache TTL uses exact DB completedAtMs (300 - 45 = 255s remaining)
     assert.equal(res.cacheRemainingSec, 255);
+
+    // Short tool-call stream (< 400ms) falls back to totalMs instead of inflating tok/s.
+    const toolTurn = recordTelemetry(
+      {
+        conversation_id: 'b9d667f9-6d2b-4a0f-96ad-90b57a7d6f5b',
+        agent_state: 'idle',
+        model: { id: 'gemini-4-neon', display_name: 'Gemini 4 Neon' },
+        context_window: { context_window_size: 1_048_576, used_percentage: 27, total_output_tokens: 314 },
+      },
+      {
+        now: t0,
+        baseDir: dir,
+        stepTiming: { idx: 2615, ttftMs: 13_416, streamMs: 177, totalMs: 13_593, completedAtMs: t0, outputTokens: 314, visibleOutputTokens: 120 },
+      },
+    );
+    assert.equal(toolTurn.ttftMs, 13_416);
+    assert.equal(toolTurn.speedTokPerSec, 23.1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

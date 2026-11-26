@@ -83,10 +83,12 @@ export function parseStepTimingMetadata(metadata, idx = null) {
         : null;
 
     let outputTokens = null;
+    let visibleOutputTokens = null;
     if (Buffer.isBuffer(f[9])) {
       try {
         const usage = decodePbFields(f[9]);
         if (typeof usage[3] === 'number' && usage[3] > 0) outputTokens = usage[3];
+        if (typeof usage[9] === 'number' && usage[9] > 0) visibleOutputTokens = usage[9];
       } catch {
         // Ignore optional usage sub-message errors.
       }
@@ -102,6 +104,7 @@ export function parseStepTimingMetadata(metadata, idx = null) {
       streamMs,
       totalMs,
       outputTokens,
+      visibleOutputTokens,
     };
   } catch {
     return null;
