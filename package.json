@@ -39,7 +39,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test",
     "install:agy": "node bin/agy-bar.mjs install",
     "uninstall:agy": "node bin/agy-bar.mjs uninstall",
     "preview": "node bin/agy-bar.mjs preview",
