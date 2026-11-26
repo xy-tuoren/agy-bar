@@ -365,6 +365,7 @@ test('renders green/red Git diff line counts (+added -removed) next to branch an
   const wide = renderStatusline(
     { ...fixtures.geminiNormal, terminal_width: 136, workspace: { current_dir: '/Users/dev/code/agy-bar' } },
     {
+      config: { theme: 'slate-dark' },
       color: true,
       git: { branch: 'main', dirty: true, added: 142, removed: 38 },
       home: '/Users/dev',
