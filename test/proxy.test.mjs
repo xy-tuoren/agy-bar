@@ -161,6 +161,10 @@ test('parseRunArgs parses leading wrapper flags and forwards all remaining agy a
   const withDashDash = parseRunArgs(['--no-proxy', '--', '--proxy', 'literal-for-agy']);
   assert.equal(withDashDash.options.noProxy, true);
   assert.deepEqual(withDashDash.agyArgs, ['--proxy', 'literal-for-agy']);
+
+  const fromHook = parseRunArgs(['--from-hook', '--', '-q', '--proxy', 'user-flag']);
+  assert.equal(fromHook.options.fromHook, true);
+  assert.deepEqual(fromHook.agyArgs, ['-q', '--proxy', 'user-flag']);
 });
 
 test('checkLocalPort and launchAgyWithProxy verify TCP reachability and inject proxy env vars into child', async () => {
@@ -201,6 +205,24 @@ test('checkLocalPort and launchAgyWithProxy verify TCP reachability and inject p
       stderr,
     });
     assert.equal(directRes.exitCode, 0);
+
+    // Verify AGY_BAR_NO_PROXY=1 bypasses proxy even through --from-hook.
+    const envBypassRes = await launchAgyWithProxy(['--from-hook', '--agy-bin', process.execPath, '--', '-e', noProxyScript], {
+      proxyConfig: { mode: 'manual', url: proxyUrl, bypass: ['127.0.0.1'] },
+      env: { PATH: process.env.PATH, HTTPS_PROXY: proxyUrl, AGY_BAR_NO_PROXY: '1' },
+      stderr,
+    });
+    assert.equal(envBypassRes.exitCode, 0);
+
+    // Verify --from-hook stays silent on non-TTY stderr when injecting proxy.
+    const hookStderr = [];
+    const hookRes = await launchAgyWithProxy(['--from-hook', '--agy-bin', process.execPath, '--', '-e', script], {
+      proxyConfig: { mode: 'manual', url: proxyUrl, bypass: ['127.0.0.1', 'localhost', '::1'] },
+      env: { PATH: process.env.PATH },
+      stderr: { isTTY: false, write: (s) => hookStderr.push(s) },
+    });
+    assert.equal(hookRes.exitCode, 0);
+    assert.equal(hookStderr.join(''), '');
 
     // Verify recursion guard prevents infinite loop.
     await assert.rejects(

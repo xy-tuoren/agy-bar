@@ -48,6 +48,7 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
       home: fakeHome,
       executable: '/usr/local/bin/node',
       platform: 'darwin',
+      env: { SHELL: '/bin/zsh' },
       withSkill: true,
       theme: 'nord',
     });
@@ -57,6 +58,8 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
     assert.equal(installed.shimPath, cliShimPath(fakeHome, 'darwin'));
     assert.ok(existsSync(installed.shimPath));
     assert.ok(readFileSync(installed.shimPath, 'utf8').includes(MANAGED_SHIM_MARKER));
+    assert.equal(installed.shellHook?.installed, true);
+    assert.ok(readFileSync(join(fakeHome, '.zshrc'), 'utf8').includes('# >>> agy-bar proxy >>>'));
 
     const afterInstall = JSON.parse(readFileSync(settingsFile, 'utf8'));
     assert.equal(afterInstall.colorScheme, 'dark');
@@ -69,18 +72,21 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
       home: fakeHome,
       executable: '/usr/local/bin/node',
       platform: 'darwin',
+      env: { SHELL: '/bin/zsh' },
       withSkill: true,
     });
 
-    const report = runDoctor({ home: fakeHome, platform: 'darwin' });
+    const report = runDoctor({ home: fakeHome, platform: 'darwin', env: { SHELL: '/bin/zsh' } });
     assert.equal(report.ok, true);
 
-    const removed = uninstallAgyBar({ home: fakeHome, platform: 'darwin', removeSkill: true });
+    const removed = uninstallAgyBar({ home: fakeHome, platform: 'darwin', env: { SHELL: '/bin/zsh' }, removeSkill: true });
     assert.equal(removed.uninstalled, true);
     assert.equal(removed.restored, true);
     assert.equal(removed.shimRemoved, true);
+    assert.equal(removed.shellHookRemoved, true);
     assert.equal(removed.skillRemoved, true);
     assert.ok(!existsSync(cliShimPath(fakeHome, 'darwin')));
+    assert.ok(!readFileSync(join(fakeHome, '.zshrc'), 'utf8').includes('# >>> agy-bar proxy >>>'));
     assert.ok(!existsSync(targetSkillPath(fakeHome)));
 
     const afterUninstall = JSON.parse(readFileSync(settingsFile, 'utf8'));

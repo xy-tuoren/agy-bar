@@ -31,6 +31,7 @@ import {
   validateProxyUrl,
 } from '../src/proxy.mjs';
 import { detectModelGroup, selectQuotaEntries } from '../src/render.mjs';
+import { inspectShellHook, installShellHook, SUPPORTED_SHELLS, uninstallShellHook } from '../src/shell-hook.mjs';
 import { aggregateStats, formatStatsReport, HEATMAP_PALETTE_NAMES, PERIOD_NAMES, readLedger, SOURCE_NAMES } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
 import { buildTabTitle, writeOscTitle } from '../src/tab-title.mjs';
@@ -45,9 +46,11 @@ export const HELP_TEXT = [
   'Usage: agy-bar <command> [options]',
   '',
   'Commands:',
-  '  install [options]       Install statusline + global ~/.local/bin/agy-bar command',
+  '  install [options]       Install statusline + global agy-bar command + shell hook for plain "agy"',
   '    --no-skill            Skip installing the companion /agy-bar skill',
   '    --no-shim             Skip installing the ~/.local/bin/agy-bar shortcut command',
+  '    --no-shell-hook       Skip adding the managed agy() no-TUN proxy hook to ~/.zshrc / ~/.bashrc',
+  `    --shell <name>        Target shell for the hook (${SUPPORTED_SHELLS.join(' | ')})`,
   `    --preset <name>       Initial preset (${PRESET_NAMES.join(' | ')})`,
   `    --theme <name>        Initial theme (${THEME_NAMES.join(' | ')})`,
   `    --bar-style <style>   Gauge style (${BAR_STYLE_NAMES.join(' | ')})`,
@@ -59,12 +62,14 @@ export const HELP_TEXT = [
   '    -q, --quiet           Suppress the one-line launch banner on stderr',
   '    --                    Stop agy-bar option parsing; forward all remaining args to agy',
   '',
-  '  proxy [subcommand]      Configure, auto-detect, or test no-TUN proxy settings',
-  '    status | check        Show effective proxy & live localhost TCP reachability (default)',
-  '    auto                  Auto-detect OS / local Clash/Surge/v2ray proxy and save it',
+  '  proxy [subcommand]      Configure, auto-detect, hook, or test no-TUN proxy settings',
+  '    status | check        Show effective proxy, shell hook & live TCP reachability (default)',
+  '    auto                  Auto-detect OS or local Clash/Surge/v2ray proxy and save it',
   '    set <url>             Save a manual proxy URL (e.g. http://127.0.0.1:7897)',
   '    on | off              Enable or disable proxy injection without losing saved URL',
   `    mode <mode>           Switch proxy mode (${PROXY_MODES.join(' | ')})`,
+  '    hook [--shell <sh>]   Install managed agy() shell hook so plain "agy" uses proxy without TUN',
+  '    unhook                Remove the managed agy() shell hook from your shell rc file',
   '    bypass <list|reset>   Set comma-separated NO_PROXY list (always keeps loopback)',
   '    env [--sh|--fish|--pwsh] Print shell export commands (e.g. eval "$(agy-bar proxy env)")',
   '    clear                 Reset proxy settings back to default auto-detect mode',
@@ -128,6 +133,8 @@ function parseFlags(args) {
     else if (arg === '--with-skill') flags.withSkill = true;
     else if (arg === '--no-shim') flags.withShim = false;
     else if (arg === '--with-shim') flags.withShim = true;
+    else if (arg === '--no-shell-hook') flags.withShellHook = false;
+    else if (arg === '--with-shell-hook') flags.withShellHook = true;
     else if (arg === '--remove-skill') flags.removeSkill = true;
     else if (arg === '--purge') flags.purge = true;
     else if (arg === '--plain') flags.plain = true;
@@ -140,7 +147,7 @@ function parseFlags(args) {
     else if (arg === '--sh') flags.shell = 'sh';
     else if (arg === '--fish') flags.shell = 'fish';
     else if (arg === '--pwsh') flags.shell = 'pwsh';
-    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval', '--session', '--source', '--palette'].includes(arg)) {
+    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval', '--session', '--source', '--palette', '--shell'].includes(arg)) {
       const value = args[++i];
       if (!value) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -189,6 +196,8 @@ export async function main(argv = process.argv.slice(2)) {
     const result = installAgyBar({
       withSkill: flags.withSkill ?? true,
       withShim: flags.withShim ?? true,
+      withShellHook: flags.withShellHook ?? true,
+      shell: flags.shell ?? null,
       preset: flags.preset ?? null,
       theme: flags.theme ?? null,
       barStyle: flags.barStyle ?? null,
@@ -206,10 +215,16 @@ export async function main(argv = process.argv.slice(2)) {
     } else if (result.shimWarning) {
       console.log(`Note: ${result.shimWarning}`);
     }
+    if (result.shellHook?.installed) {
+      console.log(`Installed shell hook (${result.shellHook.shell}): ${result.shellHook.rcPath}`);
+      console.log(`Run "${result.shellHook.reloadCmd}" (or open a new terminal) — then plain "agy" automatically uses your local proxy without TUN.`);
+    } else if (result.shellHook?.warning) {
+      console.log(`Note: ${result.shellHook.warning}`);
+    }
     if (result.skillPath) {
       console.log(`Installed companion /agy-bar skill: ${result.skillPath}`);
     }
-    console.log('Restart agy to activate the new statusline (or run "agy-bar run" to launch agy via your local proxy without TUN).');
+    console.log('Restart agy to activate the new statusline.');
     return;
   }
 
@@ -437,6 +452,8 @@ async function handleProxyCommand(args) {
         '  set <url>                 Save a manual proxy URL (e.g. http://127.0.0.1:7897)',
         '  on | off                  Enable or disable proxy injection',
         `  mode <${PROXY_MODES.join('|')}>    Switch proxy resolution mode`,
+        `  hook [--shell <${SUPPORTED_SHELLS.join('|')}>] Install agy() shell hook so plain "agy" uses proxy`,
+        '  unhook                    Remove the managed agy() shell hook',
         '  bypass <list | reset>     Update comma-separated NO_PROXY list',
         '  env [--sh|--fish|--pwsh]  Output shell export commands for eval',
         '  clear                     Reset proxy settings to default auto mode',
@@ -451,6 +468,7 @@ async function handleProxyCommand(args) {
   if (sub === 'status' || sub === 'check') {
     const { flags } = parseFlags(rest);
     const resolved = await resolveEffectiveProxy(cfg.proxy);
+    const hookInfo = inspectShellHook();
     let check = null;
     if (resolved.active && resolved.host && resolved.port) {
       check = await checkLocalPort(resolved.host, resolved.port, 500);
@@ -466,6 +484,7 @@ async function handleProxyCommand(args) {
       latencyMs: check ? check.latencyMs : null,
       error: check && !check.reachable ? check.error : null,
       bypass: resolved.bypass,
+      shellHook: hookInfo,
       warning: resolved.warning || null,
       reason: resolved.active ? null : resolved.reason,
     };
@@ -487,13 +506,44 @@ async function handleProxyCommand(args) {
       );
     }
     lines.push(`  NO_PROXY:   ${summary.bypass.join(',')}`);
+    lines.push(
+      `  Shell hook: ${hookInfo.installed ? `✓ active in ${hookInfo.rcPath} (plain "agy" auto-proxies)` : `not installed (run "agy-bar proxy hook" to enable plain "agy")`}`,
+    );
     if (summary.warning) {
       lines.push(`  Note:       ${summary.warning}`);
     }
     lines.push('');
-    lines.push('  Launch agy without TUN:  agy-bar run [agy args...]');
-    lines.push('  Optional shell alias:    alias agy=\'agy-bar run\'');
+    lines.push(
+      hookInfo.installed
+        ? '  Launch agy without TUN:  agy [args...]  (bypass once: command agy / AGY_BAR_NO_PROXY=1 agy)'
+        : '  Launch agy without TUN:  agy-bar run [agy args...]  (or enable plain "agy": agy-bar proxy hook)',
+    );
     console.log(lines.join('\n'));
+    return;
+  }
+
+  if (sub === 'hook') {
+    const { flags } = parseFlags(rest);
+    const res = installShellHook({ shell: flags.shell || null });
+    if (res.skipped) {
+      console.log(res.warning);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`${res.updated ? 'Updated' : 'Installed'} agy-bar shell hook (${res.shell}) in ${res.rcPath}`);
+    console.log(`Run "${res.reloadCmd}" (or open a new terminal) — then just type "agy" to launch through your local proxy without TUN.`);
+    return;
+  }
+
+  if (sub === 'unhook') {
+    const { flags } = parseFlags(rest);
+    const res = uninstallShellHook({ shell: flags.shell || null });
+    if (!res.removed) {
+      console.log('No managed agy-bar shell hook was found.');
+      return;
+    }
+    console.log(`Removed agy-bar shell hook from: ${res.rcPaths.join(', ')}`);
+    console.log('Open a new terminal (or run "unset -f agy") to restore plain agy immediately.');
     return;
   }
 

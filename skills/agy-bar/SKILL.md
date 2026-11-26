@@ -18,9 +18,9 @@ agy-bar <command>   # installed at ~/.local/bin/agy-bar (or: node ~/.gemini/conf
 
 | Intent | Command |
 | --- | --- |
-| Launch `agy` via local proxy (no TUN) | `agy-bar run [agy args...]` (e.g. `agy-bar run -c --dangerously-skip-permissions`) |
+| Launch `agy` via local proxy (no TUN) | Plain `agy [args...]` (via shell hook) or `agy-bar run [agy args...]` |
 | Auto-detect / set / check no-TUN proxy | `agy-bar proxy auto` / `agy-bar proxy set http://127.0.0.1:7897` / `agy-bar proxy status` |
-| Toggle proxy or print shell exports | `agy-bar proxy on\|off` / `agy-bar proxy env [--sh\|--fish\|--pwsh]` |
+| Manage shell hook / toggle / exports | `agy-bar proxy hook\|unhook` / `agy-bar proxy on\|off` / `agy-bar proxy env` |
 | Set concise tab title (~10 tokens) | `agy-bar title "<4-8 char concise topic>"` |
 | Clear custom tab title | `agy-bar title --clear` |
 | Configure tab title sync | `agy-bar config set tabTitle on\|off tabTitleSource auto\|title\|dir\|title+dir` |

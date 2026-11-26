@@ -555,6 +555,7 @@ export function parseRunArgs(args = []) {
     noProxy: false,
     agyBin: null,
     quiet: false,
+    fromHook: false,
   };
   const agyArgs = [];
 
@@ -572,6 +573,11 @@ export function parseRunArgs(args = []) {
     }
     if (arg === '--quiet' || arg === '-q') {
       options.quiet = true;
+      i += 1;
+      continue;
+    }
+    if (arg === '--from-hook') {
+      options.fromHook = true;
       i += 1;
       continue;
     }
@@ -631,46 +637,52 @@ export async function launchAgyWithProxy(
   }
 
   const { options, agyArgs } = parseRunArgs(rawArgs);
+  const envNoProxy = /^(?:1|true|yes)$/i.test(String(env.AGY_BAR_NO_PROXY || '').trim());
+  const noProxy = options.noProxy || envNoProxy;
   const executable = options.agyBin || env.AGY_BIN || 'agy';
 
   const resolved = await resolveEffectiveProxy(proxyConfig, {
     overrideUrl: options.proxyUrl,
-    noProxy: options.noProxy,
+    noProxy,
     platform,
     env,
     execCmd,
     probePort,
   });
 
+  const canAnnounce = !options.quiet && (!options.fromHook || Boolean(stderr?.isTTY));
+
   if (resolved.active) {
     const check = await probePort(resolved.host, resolved.port, 500);
     if (!check.reachable) {
       if (resolved.required) {
         throw new Error(
-          `Proxy ${redactProxyUrl(resolved.url)} is not listening (${check.error || 'unreachable'}). Start your proxy app (Clash/Surge/v2ray) or run with --no-proxy.`,
+          `Proxy ${redactProxyUrl(resolved.url)} is not listening (${check.error || 'unreachable'}). Start your proxy app (Clash/Surge/v2ray), run "command agy", or set AGY_BAR_NO_PROXY=1.`,
         );
       }
-      if (!options.quiet) {
+      if (!options.quiet && !options.fromHook) {
         stderr.write(
           `agy-bar: proxy ${redactProxyUrl(resolved.url)} is not reachable — launching ${executable} directly\n`,
         );
       }
       resolved.active = false;
-    } else if (!options.quiet) {
+    } else if (canAnnounce) {
       stderr.write(
-        `agy-bar: launching ${executable} via ${redactProxyUrl(resolved.url)} (${resolved.source}, no-TUN)\n`,
+        options.fromHook
+          ? `agy-bar: proxy ${redactProxyUrl(resolved.url)} (no-TUN)\n`
+          : `agy-bar: launching ${executable} via ${redactProxyUrl(resolved.url)} (${resolved.source}, no-TUN)\n`,
       );
       if (resolved.warning) {
         stderr.write(`agy-bar: note: ${resolved.warning}\n`);
       }
     }
-  } else if (!options.quiet && !options.noProxy && normalizeProxyConfig(proxyConfig).mode !== 'off') {
+  } else if (!options.quiet && !options.fromHook && !noProxy && normalizeProxyConfig(proxyConfig).mode !== 'off') {
     stderr.write(
       `agy-bar: no local proxy detected — launching ${executable} directly (set one with "agy-bar proxy set http://127.0.0.1:7897")\n`,
     );
   }
 
-  const childEnv = buildProxyEnv(resolved, env, { stripExisting: options.noProxy });
+  const childEnv = buildProxyEnv(resolved, env, { stripExisting: noProxy });
   childEnv.AGY_BAR_PROXY_WRAPPER = '1';
 
   return new Promise((resolve, reject) => {

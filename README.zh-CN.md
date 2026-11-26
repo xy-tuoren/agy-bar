@@ -70,32 +70,32 @@ npx agy-bar install
 
 `install` 会自动把 `agy-bar` 短命令安装到 `~/.local/bin/agy-bar`（与 `agy` 同目录），在任意终端中直接运行 `agy-bar ...` 即可。
 
-### 无需 TUN 模式直接通过本地代理启动 `agy`
+### 无需 TUN 模式直接敲 `agy` 自动走本地代理
+
+`install` 会自动在 `~/.zshrc` / `~/.bashrc` / `config.fish` 中写入一段可无损卸载的托管 `agy()` 函数块（不想写入可加 `--no-shell-hook`，随时可用 `agy-bar proxy unhook` 或 `uninstall` 清除）。重开终端（或执行一次 `source ~/.zshrc`）后，**直接敲 `agy` 就能免 TUN 自动走代理**：
 
 ```sh
-# 零配置直接启动（自动检测 macOS/Windows 系统代理或本机 Clash/Surge/v2ray 端口）
-agy-bar run
-agy-bar run -c --dangerously-skip-permissions
+# 直接敲 agy（自动识别系统代理或 Clash/Surge/v2ray 端口；没开代理时静默直连）
+agy
+agy -c --dangerously-skip-permissions
 
-# 将自动检测到的本地代理固定保存到配置，或手动指定端口
+# 也可显式用 agy-bar run 启动（无需 shell hook）
+agy-bar run -c
+
+# 将自动检测到的本地代理固定保存，或手动指定端口
 agy-bar proxy auto
 agy-bar proxy set http://127.0.0.1:7897
 
-# 查看当前生效代理与本地端口连通性、临时开关、或导出当前终端环境变量
+# 查看代理与 shell hook 状态、临时开关、或单独管理 shell hook
 agy-bar proxy status
 agy-bar proxy off
+agy-bar proxy hook      # 安装/更新 shell hook
+agy-bar proxy unhook    # 无损移除 shell hook
+
+# 单次临时直连（绕过代理）或给当前终端导出代理变量
+command agy -c          # 或: AGY_BAR_NO_PROXY=1 agy -c
 eval "$(agy-bar proxy env)"
-
-# 单次指定其他代理，或临时直连绕过代理
-agy-bar run --proxy http://127.0.0.1:7890 -c
-agy-bar run --no-proxy -c
 ```
-
-> **进阶技巧**：想直接敲 `agy` 就自动走本地代理（无需开 TUN）？在 `~/.zshrc` 或 `~/.bashrc` 里加一行即可：
-> ```sh
-> alias agy='agy-bar run'
-> ```
-> （安全防死循环：`agy-bar run` 会直接拉起真实 `agy` 二进制，不会触发 shell alias 递归。）
 
 ### 预览、用量统计、多 CLI 监视与抓包调试
 

@@ -72,30 +72,30 @@ Then **restart `agy`** to see the new statusline (in an existing session, run `/
 
 ### Launch `agy` Through Local Proxy Without TUN
 
+`install` adds a small, reversible managed `agy()` shell hook to your `~/.zshrc` / `~/.bashrc` / `config.fish` (skip with `--no-shell-hook`, remove anytime with `agy-bar proxy unhook` or `uninstall`). After opening a new terminal (or running `source ~/.zshrc`), **simply type `agy` directly** — no TUN mode needed:
+
 ```sh
-# Zero-config launch (auto-detects macOS/Windows system proxy or Clash/Surge/v2ray port)
-agy-bar run
-agy-bar run -c --dangerously-skip-permissions
+# Just type plain agy — auto-detects macOS/Windows system proxy or Clash/Surge/v2ray port!
+agy
+agy -c --dangerously-skip-permissions
+
+# Or launch explicitly via agy-bar run (even without the shell hook)
+agy-bar run -c
 
 # Pin your detected local proxy permanently, or set one manually
 agy-bar proxy auto
 agy-bar proxy set http://127.0.0.1:7897
 
-# Inspect effective proxy & live localhost TCP reachability, toggle on/off, or print shell exports
+# Inspect effective proxy, shell hook & live reachability, or toggle on/off
 agy-bar proxy status
 agy-bar proxy off
+agy-bar proxy hook      # (re-)install shell hook
+agy-bar proxy unhook    # remove shell hook cleanly
+
+# One-shot direct bypass (no proxy) or shell env export
+command agy -c          # or: AGY_BAR_NO_PROXY=1 agy -c
 eval "$(agy-bar proxy env)"
-
-# One-shot override or bypass
-agy-bar run --proxy http://127.0.0.1:7890 -c
-agy-bar run --no-proxy -c
 ```
-
-> **Tip**: Want plain `agy` to always launch via your local proxy without TUN? Add one line to `~/.zshrc` or `~/.bashrc`:
-> ```sh
-> alias agy='agy-bar run'
-> ```
-> (Safe from infinite recursion — `agy-bar run` spawns the real `agy` binary directly.)
 
 ### Preview, Stats, Monitor & Debug
 

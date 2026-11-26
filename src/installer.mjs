@@ -6,6 +6,7 @@ import { configDir, configPath, DEFAULT_CONFIG, loadConfig, PRESETS, saveConfig 
 import { SAMPLE_PAYLOADS } from './preview.mjs';
 import { redactProxyUrl } from './proxy.mjs';
 import { renderStatusline } from './render.mjs';
+import { inspectShellHook, installShellHook, uninstallShellHook } from './shell-hook.mjs';
 import { installSkill, targetSkillPath, uninstallSkill } from './skill.mjs';
 
 const PACKAGE_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -116,8 +117,11 @@ export function installAgyBar({
   home = homedir(),
   executable = realpathSync(process.execPath),
   platform = process.platform,
+  env = process.env,
   withSkill = true,
   withShim = true,
+  withShellHook = true,
+  shell = null,
   preset = null,
   theme = null,
   barStyle = null,
@@ -143,6 +147,11 @@ export function installAgyBar({
     const shimRes = installCliShim({ home, executable, cliPath, platform });
     shimPath = shimRes.shimPath;
     shimWarning = shimRes.shimWarning;
+  }
+
+  let shellHook = null;
+  if (withShellHook && withShim) {
+    shellHook = installShellHook({ home, shell, platform, env });
   }
 
   // Initialize or update user config while preserving prior overrides.
@@ -185,6 +194,7 @@ export function installAgyBar({
     cliPath,
     shimPath,
     shimWarning,
+    shellHook,
     settingsPath,
     configPath: cfgPath,
     skillPath: skillDest,
@@ -193,7 +203,13 @@ export function installAgyBar({
   };
 }
 
-export function uninstallAgyBar({ home = homedir(), platform = process.platform, removeSkill = false, purge = false } = {}) {
+export function uninstallAgyBar({
+  home = homedir(),
+  platform = process.platform,
+  env = process.env,
+  removeSkill = false,
+  purge = false,
+} = {}) {
   const settingsPath = agySettingsPath(home);
   const backupPath = backupFilePath(home);
   const appDir = installedAppDir(home);
@@ -222,6 +238,7 @@ export function uninstallAgyBar({ home = homedir(), platform = process.platform,
   }
 
   const shimRemoved = uninstallCliShim({ home, platform });
+  const hookResult = uninstallShellHook({ home, platform, env });
   rmSync(appDir, { recursive: true, force: true });
   rmSync(backupPath, { force: true });
 
@@ -238,6 +255,8 @@ export function uninstallAgyBar({ home = homedir(), platform = process.platform,
     uninstalled: true,
     restored,
     shimRemoved,
+    shellHookRemoved: hookResult.removed,
+    shellHookPaths: hookResult.rcPaths,
     skillRemoved: Boolean(skillResult?.removed),
     purged: purge,
     message: restored
@@ -246,7 +265,7 @@ export function uninstallAgyBar({ home = homedir(), platform = process.platform,
   };
 }
 
-export function runDoctor({ home = homedir(), platform = process.platform } = {}) {
+export function runDoctor({ home = homedir(), platform = process.platform, env = process.env } = {}) {
   const settingsPath = agySettingsPath(home);
   const scriptPath = installedScriptPath(home);
   const shimDest = cliShimPath(home, platform);
@@ -274,6 +293,16 @@ export function runDoctor({ home = homedir(), platform = process.platform } = {}
     ok: shimExists,
     optional: true,
     detail: shimExists ? shimDest : `Not installed (run "install" to create ${shimDest})`,
+  });
+
+  const hookInfo = inspectShellHook({ home, platform, env });
+  checks.push({
+    name: 'Shell hook (plain "agy")',
+    ok: hookInfo.installed,
+    optional: true,
+    detail: hookInfo.installed
+      ? `${hookInfo.rcPath} (plain "agy" auto-uses local proxy without TUN)`
+      : `Not installed in ${hookInfo.rcPath} (optional — run "agy-bar proxy hook")`,
   });
 
   let statusLineEnabled = false;

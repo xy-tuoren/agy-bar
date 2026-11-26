@@ -2,6 +2,14 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.7.1] - 2026-11-26
+
+### Added
+- **Seamless Shell Hook for Plain `agy` (`src/shell-hook.mjs`, `agy-bar proxy hook` / `unhook`)**:
+  - `agy-bar install` now adds a clean, reversible managed `agy()` function block (`# >>> agy-bar proxy >>> ... # <<< agy-bar proxy <<<`) to `~/.zshrc` / `~/.bashrc` / `~/.config/fish/config.fish` / PowerShell `$PROFILE` (opt out via `--no-shell-hook`, remove anytime via `agy-bar proxy unhook` or `agy-bar uninstall`).
+  - Once loaded (open a new terminal or `source ~/.zshrc`), simply typing **`agy`** (including `agy -c`, `agy --dangerously-skip-permissions`, `agy update`) automatically routes through your local Clash/Surge/v2ray proxy without enabling TUN mode — and stays completely silent with zero noise if no local proxy is running.
+  - Passes `--from-hook -- "$@"` to avoid any flag collision with `agy`, falls back gracefully to `command agy` if `agy-bar` is removed, and supports one-shot direct bypass via `command agy ...` or `AGY_BAR_NO_PROXY=1 agy ...`.
+
 ## [0.7.0] - 2026-11-26
 
 ### Added
