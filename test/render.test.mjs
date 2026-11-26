@@ -388,14 +388,14 @@ test('renders green/red Git diff line counts (+added -removed) next to branch an
   assert.ok(!clean.includes('+0'));
 });
 
-test('renders CONFIRM, INPUT, ERR attention badges and BG background task counts on line 1', () => {
+test('renders CONFIRM, INPUT, ERR attention badges and TASK background task counts on line 1', () => {
   const confirmOut = renderStatusline(
     { ...fixtures.geminiNormal, terminal_width: 116, agent_state: 'idle', tool_confirmation_pending: true, task_count: 2 },
     { config: { theme: 'slate-dark' }, color: true, env: { COLORTERM: 'truecolor' } },
   );
   const confirmPlain = stripAnsi(confirmOut.split('\n')[0]);
   assert.ok(confirmPlain.includes('CONFIRM'));
-  assert.ok(confirmPlain.includes('BG 2'));
+  assert.ok(confirmPlain.includes('TASK 2'));
   assert.ok(confirmOut.includes('\x1b[38;2;251;191;36mCONFIRM'));
 
   const inputPlain = stripAnsi(

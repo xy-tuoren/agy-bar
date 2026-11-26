@@ -276,7 +276,7 @@ function formatSubagentsBadge(activity, show, palette, color) {
 
 function formatTasksBadge(activity, show, palette, color) {
   if (!show.subagents || activity.runningTasks <= 0) return '';
-  return `${fg('BG', palette.muted, color)} ${fg(String(activity.runningTasks), palette.accent, color)}`;
+  return `${fg('TASK', palette.muted, color)} ${fg(String(activity.runningTasks), palette.accent, color)}`;
 }
 
 function formatBusySegment(isBusy, telemetry, show, palette, color) {
