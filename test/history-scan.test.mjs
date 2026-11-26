@@ -92,7 +92,7 @@ test('getOrRefreshUsageSummary returns cached totals and increments live deltas 
     assert.equal(initial.weekTokens, 1_515_000);
     assert.equal(initial.monthTokens, 2_515_000);
     assert.equal(initial.totalTokens, 2_515_000);
-    assert.ok(initial.todayCostUsd > 0.16 && initial.todayCostUsd < 0.18);
+    assert.ok(initial.todayCostUsd > 0.18 && initial.todayCostUsd < 0.21);
     assert.ok(initial.recentSessionCosts['conv-live-123456'] > initial.todayCostUsd);
     saveUsageSummary(initial, { baseDir: dir });
 

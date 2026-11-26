@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import { delimiter, dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -12,10 +12,23 @@ import {
   saveConfig,
   TAB_TITLE_SOURCES,
 } from '../src/config.mjs';
-import { computeUsageSummary, saveUsageSummary, scanConversationHistory } from '../src/history-scan.mjs';
+import { computeUsageSummary, saveUsageSummary, scanConversationHistory, usageSummaryPath } from '../src/history-scan.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
+import {
+  BUILTIN_RATES,
+  clearPricingMemo,
+  lookupRates,
+  normalizeModelKey,
+  pricingCachePath,
+  readPricingCache,
+} from '../src/pricing.mjs';
+import {
+  maybeTriggerBackgroundPricingSync,
+  PRICING_SOURCE_NAMES,
+  syncPricingCache,
+} from '../src/pricing-sync.mjs';
 import {
   checkLocalPort,
   COMMON_LOCAL_PROXY_PORTS,
@@ -107,6 +120,14 @@ export const HELP_TEXT = [
   '    --json                Output machine-readable JSON',
   '    --plain               Disable ANSI colors',
   '',
+  '  pricing [subcommand]    Inspect, sync, or override local model reference API pricing',
+  '    show [--json]         Show cache status and active per-1M token rates (default)',
+  `    sync [options]        Sync latest public rates (${PRICING_SOURCE_NAMES.join(' | ')}) via proxy or direct`,
+  '      --source <src>      auto (models.dev -> litellm) | models.dev | litellm',
+  '      --force             Ignore ETag and force refresh',
+  '    set <model> <in> <out> [cacheRead] [cacheWrite]  Save custom USD/1M override',
+  '    reset [model|--cache] Remove custom override(s) or clear synced pricing cache',
+  '',
   '  monitor [options]       Live multi-CLI HUD tracking all active agy terminals',
   '    --interval <ms>       Refresh interval in milliseconds (default: 1000)',
   '    --once                Print a single snapshot and exit',
@@ -155,6 +176,9 @@ function parseFlags(args) {
     else if (arg === '--show') flags.show = true;
     else if (arg === '--clear') flags.clear = true;
     else if (arg === '--no-cache') flags.noCache = true;
+    else if (arg === '--cache') flags.cache = true;
+    else if (arg === '--force') flags.force = true;
+    else if (arg === '--quiet' || arg === '-q') flags.quiet = true;
     else if (arg === '--sh') flags.shell = 'sh';
     else if (arg === '--fish') flags.shell = 'fish';
     else if (arg === '--pwsh') flags.shell = 'pwsh';
@@ -199,6 +223,11 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (command === 'proxy') {
     await handleProxyCommand(rest);
+    return;
+  }
+
+  if (command === 'pricing') {
+    await handlePricingCommand(rest);
     return;
   }
 
@@ -334,6 +363,9 @@ export async function main(argv = process.argv.slice(2)) {
       return;
     }
     const cfg = loadConfig();
+    if (cfg.pricingAutoSync) {
+      maybeTriggerBackgroundPricingSync({ enabled: true });
+    }
     const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
     console.log(formatStatsReport(report, { color, theme: cfg.theme, heatmapPalette: palette }));
     return;
@@ -346,6 +378,9 @@ export async function main(argv = process.argv.slice(2)) {
       throw new Error('--interval must be between 250 and 60000 milliseconds.');
     }
     const cfg = loadConfig();
+    if (cfg.pricingAutoSync) {
+      maybeTriggerBackgroundPricingSync({ enabled: true });
+    }
     const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
     await startMonitor({ intervalMs, once: Boolean(flags.once), color });
     return;
@@ -691,6 +726,186 @@ async function handleProxyCommand(args) {
   }
 
   throw new Error(`Unknown proxy subcommand "${sub}". Run "agy-bar proxy --help" for usage.`);
+}
+
+async function handlePricingCommand(args) {
+  const [sub = 'show', ...rest] = args;
+  const cfg = loadConfig();
+
+  if (sub === 'help' || sub === '--help' || sub === '-h') {
+    console.log(
+      [
+        'Usage: agy-bar pricing <subcommand>',
+        '',
+        '  show [--json]                                   Show cache status & active per-1M rates (default)',
+        `  sync [--source ${PRICING_SOURCE_NAMES.join('|')}] [--force]  Sync latest public pricing catalog`,
+        '  set <model> <in> <out> [cacheRead] [cacheWrite] Save custom USD per 1M token override',
+        '  reset [model | --cache]                         Clear custom overrides or synced cache',
+      ].join('\n'),
+    );
+    return;
+  }
+
+  if (sub === 'show' || sub === 'status') {
+    const { flags } = parseFlags(rest);
+    const cache = readPricingCache();
+    const ageHours = cache?.fetchedAt ? Math.round(((Date.now() - cache.fetchedAt) / 3_600_000) * 10) / 10 : null;
+    const sampleModels = [
+      'Gemini 4 Neon',
+      'Gemini 4 Carbon',
+      'Gemini 4 Argon',
+      'Gemini 4 Hydrogen',
+      'Gemini 3.8 Flash',
+      'Gemini 2.5 Pro',
+      'Gemini 2.5 Flash',
+      'Claude Opus 4.6',
+      'Claude Sonnet 4.6',
+      'Claude Haiku 4.5',
+    ];
+    for (const customKey of Object.keys(cfg.customPricing || {})) {
+      if (!sampleModels.some((m) => normalizeModelKey(m) === normalizeModelKey(customKey))) {
+        sampleModels.push(customKey);
+      }
+    }
+    const rows = sampleModels.map((model) => {
+      const rate = lookupRates(model, { customPricing: cfg.customPricing, pricingCache: cache });
+      return {
+        model,
+        input: rate?.input ?? null,
+        output: rate?.output ?? null,
+        cacheRead: rate?.cacheRead ?? null,
+        cacheWrite: rate?.cacheWrite ?? null,
+        source: rate?.source ?? 'unpriced',
+      };
+    });
+
+    if (flags.json) {
+      console.log(
+        JSON.stringify(
+          {
+            autoSync: cfg.pricingAutoSync,
+            cache: cache
+              ? {
+                  source: cache.source,
+                  fetchedAt: new Date(cache.fetchedAt).toISOString(),
+                  ageHours,
+                  cachedModels: Object.keys(cache.rates || {}).length,
+                  path: pricingCachePath(),
+                }
+              : null,
+            customOverrides: cfg.customPricing,
+            effectiveRates: rows,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    const lines = [
+      'agy-bar model pricing (USD per 1M tokens)',
+      `  Auto-sync:  ${cfg.pricingAutoSync ? 'on (24h background SWR; disable: agy-bar config set pricingAutoSync off)' : 'off (manual: agy-bar pricing sync)'}`,
+      `  Cache:      ${cache ? `${cache.source} · ${Object.keys(cache.rates || {}).length} models · updated ${ageHours}h ago` : 'not synced yet (using built-in calibrated rates)'}`,
+      '',
+      `  ${'Model'.padEnd(20)} ${'Input'.padStart(7)} ${'Output'.padStart(7)} ${'CacheRd'.padStart(8)}  Source`,
+      `  ${'─'.repeat(58)}`,
+    ];
+    for (const r of rows) {
+      const fmt = (n) => (typeof n === 'number' ? `$${n < 1 ? n.toFixed(3).replace(/0+$/, '') : n.toFixed(2)}` : '--');
+      lines.push(
+        `  ${r.model.padEnd(20)} ${fmt(r.input).padStart(7)} ${fmt(r.output).padStart(7)} ${fmt(r.cacheRead).padStart(8)}  ${r.source}`,
+      );
+    }
+    lines.push('');
+    lines.push('  Refresh now: agy-bar pricing sync   |   Override: agy-bar pricing set <model> <in> <out> [cacheRead]');
+    console.log(lines.join('\n'));
+    return;
+  }
+
+  if (sub === 'sync') {
+    const { flags } = parseFlags(rest);
+    const source = (flags.source || 'auto').toLowerCase();
+    if (!PRICING_SOURCE_NAMES.includes(source)) {
+      throw new Error(`Invalid --source "${source}". Choose one of: ${PRICING_SOURCE_NAMES.join(', ')}`);
+    }
+    const res = await syncPricingCache({
+      proxyConfig: cfg.proxy,
+      source,
+      force: Boolean(flags.force),
+    });
+    if (!res.ok) {
+      if (!flags.quiet) {
+        throw new Error(`Pricing sync failed (${res.error}). Keeping existing local rates.`);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    if (!flags.quiet) {
+      console.log(
+        res.notModified
+          ? `Pricing cache is already up to date (${res.source}, ${res.count} models, HTTP 304).`
+          : `Synced ${res.count} model rates from ${res.source} -> ${res.cachePath}`,
+      );
+    }
+    return;
+  }
+
+  if (sub === 'set') {
+    const [rawModel, rawIn, rawOut, rawCr, rawCw] = rest;
+    if (!rawModel || !rawIn || !rawOut) {
+      throw new Error('Usage: agy-bar pricing set <model> <input> <output> [cacheRead] [cacheWrite]  (USD per 1M tokens)');
+    }
+    const key = normalizeModelKey(rawModel);
+    const input = Number(rawIn);
+    const output = Number(rawOut);
+    const cacheRead = rawCr !== undefined ? Number(rawCr) : Math.round(input * 1000) / 10_000;
+    const cacheWrite = rawCw !== undefined ? Number(rawCw) : input;
+    if (!key || !Number.isFinite(input) || input <= 0 || input > 500 || !Number.isFinite(output) || output <= 0 || output > 1000) {
+      throw new Error('Input (0..500) and output (0..1000) must be valid positive numbers in USD per 1M tokens.');
+    }
+    if (!Number.isFinite(cacheRead) || cacheRead < 0 || !Number.isFinite(cacheWrite) || cacheWrite < 0) {
+      throw new Error('cacheRead and cacheWrite must be non-negative numbers.');
+    }
+    const nextCustom = {
+      ...(cfg.customPricing || {}),
+      [key]: { input, output, cacheRead, cacheWrite },
+    };
+    saveConfig({ ...cfg, customPricing: nextCustom });
+    clearPricingMemo();
+    try {
+      rmSync(usageSummaryPath(), { force: true });
+    } catch {
+      // Ignore cleanup errors.
+    }
+    console.log(`Saved custom pricing for "${key}": in=$${input}/1M out=$${output}/1M cacheRead=$${cacheRead}/1M`);
+    return;
+  }
+
+  if (sub === 'reset') {
+    const { flags, positional } = parseFlags(rest);
+    if (flags.cache) {
+      rmSync(pricingCachePath(), { force: true });
+      clearPricingMemo();
+      console.log('Cleared synced pricing cache (reverted to built-in calibrated rates).');
+      return;
+    }
+    const target = positional[0] ? normalizeModelKey(positional[0]) : null;
+    if (target) {
+      const nextCustom = { ...(cfg.customPricing || {}) };
+      delete nextCustom[target];
+      saveConfig({ ...cfg, customPricing: nextCustom });
+      clearPricingMemo();
+      console.log(`Removed custom pricing override for "${target}".`);
+      return;
+    }
+    saveConfig({ ...cfg, customPricing: {} });
+    clearPricingMemo();
+    console.log(`Cleared all custom pricing overrides (${BUILTIN_RATES.length} built-in fallback rates active).`);
+    return;
+  }
+
+  throw new Error(`Unknown pricing subcommand "${sub}". Run "agy-bar pricing --help" for usage.`);
 }
 
 function isDirectInvocation() {

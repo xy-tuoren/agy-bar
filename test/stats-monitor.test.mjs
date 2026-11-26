@@ -6,23 +6,28 @@ import { estimateCost, formatUsd } from '../src/pricing.mjs';
 import { aggregateStats, formatStatsReport, renderActivityHeatmap } from '../src/stats.mjs';
 
 test('estimateCost computes billed API cost, cache savings, and marks unknown models unpriced', () => {
-  const sonnet = estimateCost({
-    model: 'Claude Sonnet 4.6',
-    input: 100_000,
-    output: 20_000,
-    cacheRead: 500_000,
-  });
+  const opts = { useLocalSources: false };
+  const sonnet = estimateCost(
+    {
+      model: 'Claude Sonnet 4.6',
+      input: 100_000,
+      output: 20_000,
+      cacheRead: 500_000,
+    },
+    opts,
+  );
   assert.equal(sonnet.priced, true);
   // 0.1*3 + 0.02*15 + 0.5*0.3 = 0.3 + 0.3 + 0.15 = 0.75
   assert.ok(Math.abs(sonnet.costUsd - 0.75) < 1e-6);
   // cache saved = 0.5 * (3.0 - 0.3) = 1.35
   assert.ok(Math.abs(sonnet.cacheSavedUsd - 1.35) < 1e-6);
 
-  const neon = estimateCost({ model: 'Gemini 4 Neon', input: 1_000_000, output: 100_000 });
+  const neon = estimateCost({ model: 'Gemini 4 Neon', input: 1_000_000, output: 100_000 }, opts);
   assert.equal(neon.priced, true);
-  assert.ok(Math.abs(neon.costUsd - 0.55) < 1e-6);
+  // 1.0*3.0 + 0.1*15.0 = 4.5
+  assert.ok(Math.abs(neon.costUsd - 4.5) < 1e-6);
 
-  const unknown = estimateCost({ model: 'Mystery Local LLM', input: 50_000, output: 10_000 });
+  const unknown = estimateCost({ model: 'Mystery Local LLM', input: 50_000, output: 10_000 }, opts);
   assert.equal(unknown.priced, false);
   assert.equal(unknown.costUsd, 0);
   assert.equal(formatUsd(0.0042), '$0.0042');

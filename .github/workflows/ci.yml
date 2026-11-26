@@ -27,11 +27,14 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-      - name: Verify CLI preview, stats, monitor, config & proxy smoke tests
+      - name: Verify CLI preview, stats, monitor, config, pricing & proxy smoke tests
+        env:
+          AGY_BAR_NO_AUTO_SYNC: '1'
         run: |
           node bin/agy-bar.mjs preview --width 112 --scenario all --plain
           node bin/agy-bar.mjs stats 7d --plain
           node bin/agy-bar.mjs monitor --once --plain
           node bin/agy-bar.mjs config show
+          node bin/agy-bar.mjs pricing show --json
           node bin/agy-bar.mjs proxy status --json
           node bin/agy-bar.mjs proxy env

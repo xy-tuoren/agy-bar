@@ -106,10 +106,16 @@ eval "$(agy-bar proxy env)"
 agy-bar preview --scenario all --width 116
 agy-bar preview --preset compact --theme nord --bar-style smooth
 
-# 查看全量历史 Token 总览卡片、52 周真彩终端热力图与 API 预估费用
+# 查看全量历史 Token 总览卡片、52 周真彩终端热力图与实时校准 API 预估费用
 agy-bar stats
 agy-bar stats 30d --palette green --source cli
 agy-bar stats all --model neon --json
+
+# 查看、手动同步或自定义模型参考单价（默认每 24 小时后台静默从公开 models.dev/LiteLLM 同步，零鉴权不阻塞底栏）
+agy-bar pricing show
+agy-bar pricing sync
+agy-bar pricing set gemini-4-neon 3 15 0.15
+agy-bar config set pricingAutoSync off   # 如需严格离线可随时关闭自动同步
 
 # 实时监视多个并发 agy 终端
 agy-bar monitor

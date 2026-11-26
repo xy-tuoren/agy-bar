@@ -2,6 +2,16 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.10.0] - 2026-11-26
+
+### Added
+- **Live Dynamic Pricing Cache & 24h Background SWR Sync (`src/pricing.mjs`, `src/pricing-sync.mjs`, `agy-bar pricing`)**:
+  - Calibrated built-in fallback rates to real public API pricing for **Gemini 4 Neon** (`$3/$15/$0.15`), **Carbon / Argon** (`$2/$10/$0.10`), **Hydrogen** (`$1.5/$7.5/$0.075`), **Gemini 3.8 Flash** (`$0.75/$3.75`), and **Claude Opus 4.5–4.8** (`$5/$25/$0.50`), **Sonnet** (`$3/$15`), **Haiku 4.5** (`$1/$5`).
+  - Added 3-tier `< 0.1ms` local pricing lookup (`config.customPricing` → synced `~/.gemini/config/agy-bar/pricing-cache.json` → built-in calibrated rates), memoized by file `mtimeMs`.
+  - Added zero-dependency proxy-aware HTTPS sync (`models.dev/api.json` primary with automatic `LiteLLM` fallback, `gzip`, `ETag` `304`, sanity bounds, and atomic writes; works in China without TUN via local HTTP CONNECT proxy).
+  - Enabled non-blocking 24h background Stale-While-Revalidate (`pricingAutoSync: true`, single-flight 6h failure backoff; opt out anytime via `agy-bar config set pricingAutoSync off`). Zero account credentials, never blocks statusline rendering.
+  - Added `agy-bar pricing show | sync | set | reset` CLI commands.
+
 ## [0.9.1] - 2026-11-26
 
 ### Improved

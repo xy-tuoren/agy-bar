@@ -30,6 +30,7 @@ agy-bar <command>   # installed at ~/.local/bin/agy-bar (or: node ~/.gemini/conf
 | Show / hide elements | `agy-bar config enable cost session contextDelta` / `agy-bar config disable dir ttft speed` |
 | Tune alerts or timing | `agy-bar config set ttftWarnSec 8 ttftDangerSec 15 dbTiming on` |
 | Full-history token heatmap & stats | `agy-bar stats [today\|7d\|30d\|all] [--source all\|cli\|desktop\|ledger] [--palette purple\|green\|cyan\|amber]` |
+| Inspect, sync, or override model pricing | `agy-bar pricing show` / `agy-bar pricing sync` / `agy-bar pricing set <model> <in> <out> [cacheRead]` |
 | Multi-CLI live monitor | `agy-bar monitor [--once]` |
 | Redacted payload debug | `agy-bar debug --capture` then `agy-bar debug` |
 | Preview / Diagnostics | `agy-bar preview --scenario all` / `agy-bar doctor` |

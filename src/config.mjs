@@ -137,6 +137,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   cacheTtlSec: 300,
   ledger: true,
   dbTiming: true,
+  pricingAutoSync: true,
   tabTitle: true,
   tabTitleSource: 'auto',
   tabTitleMaxLen: 26,
@@ -147,6 +148,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   ttftWarnSec: 8,
   ttftDangerSec: 15,
   modelThresholds: Object.freeze({}),
+  customPricing: Object.freeze({}),
   proxy: DEFAULT_PROXY_CONFIG,
   show: PRESETS.dashboard,
 });
@@ -298,6 +300,30 @@ function normalizeModelThresholds(raw, fallbackWarn, fallbackDanger) {
   return out;
 }
 
+function normalizeCustomPricing(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [key, entry] of Object.entries(raw)) {
+    const cleanKey = String(key || '').trim().toLowerCase();
+    if (!cleanKey || !entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const input = Number(entry.input);
+    const output = Number(entry.output);
+    if (!Number.isFinite(input) || input <= 0 || input > 500) continue;
+    if (!Number.isFinite(output) || output <= 0 || output > 1000) continue;
+    const cacheRead = entry.cacheRead != null ? Number(entry.cacheRead) : Math.round(input * 1000) / 10_000;
+    const cacheWrite = entry.cacheWrite != null ? Number(entry.cacheWrite) : input;
+    if (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > input * 2) continue;
+    if (!Number.isFinite(cacheWrite) || cacheWrite < 0 || cacheWrite > input * 4) continue;
+    out[cleanKey] = {
+      input: Math.round(input * 10_000) / 10_000,
+      output: Math.round(output * 10_000) / 10_000,
+      cacheRead: Math.round(cacheRead * 10_000) / 10_000,
+      cacheWrite: Math.round(cacheWrite * 10_000) / 10_000,
+    };
+  }
+  return out;
+}
+
 export function normalizeConfig(raw) {
   const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const preset = PRESET_NAMES.includes(input.preset) ? input.preset : DEFAULT_CONFIG.preset;
@@ -308,6 +334,7 @@ export function normalizeConfig(raw) {
   const cacheTtlSec = clampInt(input.cacheTtlSec, 30, 3600, DEFAULT_CONFIG.cacheTtlSec);
   const ledger = typeof input.ledger === 'boolean' ? input.ledger : DEFAULT_CONFIG.ledger;
   const dbTiming = typeof input.dbTiming === 'boolean' ? input.dbTiming : DEFAULT_CONFIG.dbTiming;
+  const pricingAutoSync = typeof input.pricingAutoSync === 'boolean' ? input.pricingAutoSync : DEFAULT_CONFIG.pricingAutoSync;
   const tabTitle = typeof input.tabTitle === 'boolean' ? input.tabTitle : DEFAULT_CONFIG.tabTitle;
   const tabTitleSource = TAB_TITLE_SOURCES.includes(input.tabTitleSource) ? input.tabTitleSource : DEFAULT_CONFIG.tabTitleSource;
   const tabTitleMaxLen = clampInt(input.tabTitleMaxLen, 10, 60, DEFAULT_CONFIG.tabTitleMaxLen);
@@ -318,6 +345,7 @@ export function normalizeConfig(raw) {
   const ttftWarnSec = clampInt(input.ttftWarnSec, 1, 120, DEFAULT_CONFIG.ttftWarnSec);
   const ttftDangerSec = clampInt(input.ttftDangerSec, ttftWarnSec, 300, DEFAULT_CONFIG.ttftDangerSec);
   const modelThresholds = normalizeModelThresholds(input.modelThresholds, contextWarn, contextDanger);
+  const customPricing = normalizeCustomPricing(input.customPricing);
   const proxy = normalizeProxyConfig(input.proxy);
 
   const show = { ...PRESETS[preset] };
@@ -338,6 +366,7 @@ export function normalizeConfig(raw) {
     cacheTtlSec,
     ledger,
     dbTiming,
+    pricingAutoSync,
     tabTitle,
     tabTitleSource,
     tabTitleMaxLen,
@@ -348,6 +377,7 @@ export function normalizeConfig(raw) {
     ttftWarnSec,
     ttftDangerSec,
     modelThresholds,
+    customPricing,
     proxy,
     show,
   };
@@ -374,6 +404,7 @@ export function serializeConfig(cfg) {
   if (normalized.cacheTtlSec !== DEFAULT_CONFIG.cacheTtlSec) out.cacheTtlSec = normalized.cacheTtlSec;
   if (normalized.ledger !== DEFAULT_CONFIG.ledger) out.ledger = normalized.ledger;
   if (normalized.dbTiming !== DEFAULT_CONFIG.dbTiming) out.dbTiming = normalized.dbTiming;
+  if (normalized.pricingAutoSync !== DEFAULT_CONFIG.pricingAutoSync) out.pricingAutoSync = normalized.pricingAutoSync;
   if (normalized.tabTitle !== DEFAULT_CONFIG.tabTitle) out.tabTitle = normalized.tabTitle;
   if (normalized.tabTitleSource !== DEFAULT_CONFIG.tabTitleSource) out.tabTitleSource = normalized.tabTitleSource;
   if (normalized.tabTitleMaxLen !== DEFAULT_CONFIG.tabTitleMaxLen) out.tabTitleMaxLen = normalized.tabTitleMaxLen;
@@ -384,6 +415,7 @@ export function serializeConfig(cfg) {
   if (normalized.ttftWarnSec !== DEFAULT_CONFIG.ttftWarnSec) out.ttftWarnSec = normalized.ttftWarnSec;
   if (normalized.ttftDangerSec !== DEFAULT_CONFIG.ttftDangerSec) out.ttftDangerSec = normalized.ttftDangerSec;
   if (Object.keys(normalized.modelThresholds).length > 0) out.modelThresholds = normalized.modelThresholds;
+  if (Object.keys(normalized.customPricing).length > 0) out.customPricing = normalized.customPricing;
   if (!isDefaultProxyConfig(normalized.proxy)) out.proxy = normalized.proxy;
   const overrides = computeShowOverrides(normalized.preset, normalized.show);
   if (Object.keys(overrides).length > 0) out.show = overrides;
@@ -421,6 +453,7 @@ export function applyConfigCommand(args = [], path = configPath()) {
   let next = {
     ...current,
     modelThresholds: structuredClone(current.modelThresholds),
+    customPricing: structuredClone(current.customPricing),
     proxy: { ...current.proxy, bypass: [...current.proxy.bypass] },
     show: { ...current.show },
   };
@@ -500,6 +533,10 @@ export function applyConfigCommand(args = [], path = configPath()) {
         const parsed = parseToggle(value);
         if (parsed === null) throw new Error('dbTiming must be on/off (or true/false).');
         next.dbTiming = parsed;
+      } else if (['pricingautosync', 'pricing-auto-sync', 'pricing_auto_sync'].includes(lower)) {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('pricingAutoSync must be on/off (or true/false).');
+        next.pricingAutoSync = parsed;
       } else if (['tabtitle', 'tab-title', 'tab_title'].includes(lower)) {
         const parsed = parseToggle(value);
         if (parsed === null) throw new Error('tabTitle must be on/off (or true/false).');

@@ -106,10 +106,16 @@ eval "$(agy-bar proxy env)"
 agy-bar preview --scenario all --width 116
 agy-bar preview --preset compact --theme nord --bar-style smooth
 
-# Full-history token dashboard, 52-week terminal heatmap & estimated API cost
+# Full-history token dashboard, 52-week terminal heatmap & live-synced API cost
 agy-bar stats
 agy-bar stats 30d --palette green --source cli
 agy-bar stats all --model neon --json
+
+# Inspect, sync, or customize reference API pricing (24h background SWR auto-sync via public models.dev/LiteLLM; zero auth)
+agy-bar pricing show
+agy-bar pricing sync
+agy-bar pricing set gemini-4-neon 3 15 0.15
+agy-bar config set pricingAutoSync off   # opt out for strict offline mode
 
 # Live multi-CLI HUD
 agy-bar monitor

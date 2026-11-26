@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { getOrRefreshUsageSummary } from './history-scan.mjs';
+import { maybeTriggerBackgroundPricingSync } from './pricing-sync.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
@@ -90,6 +91,10 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       if (tab.changed && tab.title) {
         updateSessionTabTitle(telemetry.sessionId, tab.title, { hostPid: tab.hostPid });
       }
+    }
+
+    if (config.pricingAutoSync) {
+      maybeTriggerBackgroundPricingSync({ enabled: true, now, env });
     }
 
     const rendered = renderStatusline(payload, {
