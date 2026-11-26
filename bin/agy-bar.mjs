@@ -227,7 +227,7 @@ export async function main(argv = process.argv.slice(2)) {
     );
     const writeRes = renderedTitle && cfg.tabTitle ? writeOscTitle(renderedTitle) : { written: false, tty: null };
     if (writeRes.written) {
-      updateSessionTabTitle(updated.sessionId, renderedTitle);
+      updateSessionTabTitle(updated.sessionId, renderedTitle, { hostPid: writeRes.hostPid });
     }
     console.log(
       flags.clear

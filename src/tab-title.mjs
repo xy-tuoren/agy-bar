@@ -76,7 +76,8 @@ export function buildTabTitle(
 export function formatOscTitle(title) {
   const safe = sanitizeText(title).replace(/[\x07\x1b]/g, '');
   if (!safe) return '';
-  return `\x1b]0;${safe}\x07`;
+  // Emit both OSC 0 (icon/tab + window) and OSC 2 (window/surface) for Ghostty/iTerm2/Kitty/WezTerm compatibility.
+  return `\x1b]0;${safe}\x07\x1b]2;${safe}\x07`;
 }
 
 function defaultReadProc(pid) {
@@ -104,23 +105,24 @@ function isWritable(path) {
   }
 }
 
-export function resolveTerminalTty({
+export function resolveTerminalTarget({
   env = process.env,
   platform = process.platform,
   pid = process.pid,
   readProc = defaultReadProc,
   canWrite = isWritable,
 } = {}) {
-  if (platform === 'win32') return null;
+  if (platform === 'win32') return { tty: null, hostPid: null };
 
   if (env.AGY_BAR_TTY) {
-    return env.AGY_BAR_TTY;
+    return { tty: env.AGY_BAR_TTY, hostPid: null };
   }
 
-  // Walk up ancestor processes so we reliably find the `agy` host tab's TTY
+  // Walk up ancestor processes so we reliably find the `agy` host tab's TTY & PID
   // even when invoked inside a subshell or tool-execution PTY.
   let currentPid = pid;
   let fallbackTty = null;
+  let fallbackPid = null;
   for (let hop = 0; hop < 5 && currentPid > 1; hop++) {
     const info = readProc(currentPid);
     if (!info) break;
@@ -129,10 +131,11 @@ export function resolveTerminalTty({
       const devPath = `/dev/${ttyName}`;
       if (canWrite(devPath)) {
         if (/(?:^|\/)agy$/i.test(info.comm)) {
-          return devPath;
+          return { tty: devPath, hostPid: currentPid };
         }
         if (!fallbackTty && hop > 0) {
           fallbackTty = devPath;
+          fallbackPid = currentPid;
         }
       }
     }
@@ -140,30 +143,34 @@ export function resolveTerminalTty({
     currentPid = info.ppid;
   }
 
-  if (fallbackTty) return fallbackTty;
-  if (canWrite('/dev/tty')) return '/dev/tty';
-  return null;
+  if (fallbackTty) return { tty: fallbackTty, hostPid: fallbackPid };
+  if (canWrite('/dev/tty')) return { tty: '/dev/tty', hostPid: null };
+  return { tty: null, hostPid: null };
+}
+
+export function resolveTerminalTty(opts = {}) {
+  return resolveTerminalTarget(opts).tty;
 }
 
 export function writeOscTitle(title, { ttyPath = null, writer = null, resolveOpts = {} } = {}) {
   const seq = formatOscTitle(title);
-  if (!seq) return { written: false, tty: null, sequence: '' };
+  if (!seq) return { written: false, tty: null, hostPid: null, sequence: '' };
 
   if (typeof writer === 'function') {
     writer(seq);
-    return { written: true, tty: ttyPath || 'custom', sequence: seq };
+    return { written: true, tty: ttyPath || 'custom', hostPid: null, sequence: seq };
   }
 
-  const target = ttyPath || resolveTerminalTty(resolveOpts);
-  if (!target) return { written: false, tty: null, sequence: seq };
+  const resolved = ttyPath ? { tty: ttyPath, hostPid: null } : resolveTerminalTarget(resolveOpts);
+  if (!resolved.tty) return { written: false, tty: null, hostPid: null, sequence: seq };
 
   let fd = null;
   try {
-    fd = openSync(target, 'w');
+    fd = openSync(resolved.tty, 'w');
     writeSync(fd, seq);
-    return { written: true, tty: target, sequence: seq };
+    return { written: true, tty: resolved.tty, hostPid: resolved.hostPid, sequence: seq };
   } catch {
-    return { written: false, tty: target, sequence: seq };
+    return { written: false, tty: resolved.tty, hostPid: resolved.hostPid, sequence: seq };
   } finally {
     if (fd !== null) {
       try {
@@ -182,6 +189,7 @@ export function syncTabTitle(
     git = null,
     customTitle = null,
     prevTabTitle = null,
+    prevTabHostPid = null,
     force = false,
     ttyPath = null,
     writer = null,
@@ -189,18 +197,22 @@ export function syncTabTitle(
   } = {},
 ) {
   if (config.tabTitle === false) {
-    return { changed: false, written: false, title: null, tty: null };
+    return { changed: false, written: false, title: null, tty: null, hostPid: null };
   }
 
   const title = buildTabTitle(payload, { config, git, customTitle });
   if (!title) {
-    return { changed: false, written: false, title: null, tty: null };
+    return { changed: false, written: false, title: null, tty: null, hostPid: null };
   }
 
-  if (!force && title === prevTabTitle) {
-    return { changed: false, written: false, title, tty: null };
+  const resolved = !writer && !ttyPath ? resolveTerminalTarget(resolveOpts) : { tty: ttyPath, hostPid: null };
+  const hostChanged = resolved.hostPid !== null && prevTabHostPid !== null && resolved.hostPid !== prevTabHostPid;
+  const hostUnknownBefore = resolved.hostPid !== null && prevTabHostPid === null;
+
+  if (!force && title === prevTabTitle && !hostChanged && !hostUnknownBefore) {
+    return { changed: false, written: false, title, tty: resolved.tty, hostPid: resolved.hostPid };
   }
 
-  const result = writeOscTitle(title, { ttyPath, writer, resolveOpts });
-  return { changed: true, written: result.written, title, tty: result.tty };
+  const result = writeOscTitle(title, { ttyPath: resolved.tty, writer, resolveOpts });
+  return { changed: true, written: result.written, title, tty: result.tty, hostPid: resolved.hostPid };
 }

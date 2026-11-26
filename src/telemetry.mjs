@@ -373,6 +373,7 @@ export function recordTelemetry(
     customTitle,
     customTitleBase,
     lastTabTitle: prev?.lastTabTitle || null,
+    lastTabHostPid: prev?.lastTabHostPid ?? null,
     model: modelName,
     effort: sanitizeText(p.model?.effort || '') || null,
     usedPct,
@@ -417,16 +418,21 @@ export function recordTelemetry(
     conversationTitle,
     customTitle,
     prevTabTitle: prev?.lastTabTitle || null,
+    prevTabHostPid: prev?.lastTabHostPid ?? null,
   };
 }
 
-export function updateSessionTabTitle(sessionId, tabTitle, { baseDir = configDir(homedir()) } = {}) {
+export function updateSessionTabTitle(sessionId, tabTitle, { hostPid = null, baseDir = configDir(homedir()) } = {}) {
   if (!sessionId) return false;
   const sFile = join(sessionsDir(baseDir), `${sessionId}.json`);
   const prev = readSessionFile(sFile);
   if (!prev) return false;
   try {
-    writeFileSync(sFile, JSON.stringify({ ...prev, lastTabTitle: tabTitle }) + '\n', 'utf8');
+    writeFileSync(
+      sFile,
+      JSON.stringify({ ...prev, lastTabTitle: tabTitle, ...(hostPid !== null ? { lastTabHostPid: hostPid } : {}) }) + '\n',
+      'utf8',
+    );
     return true;
   } catch {
     return false;

@@ -45,8 +45,8 @@ test('buildTabTitle formats working/idle prefix and supports auto, dir, title+di
   );
 });
 
-test('formatOscTitle sanitizes control characters and wraps in OSC 0 sequence', () => {
-  assert.equal(formatOscTitle('● 开发\x07\x1b[31magy-bar'), '\x1b]0;● 开发agy-bar\x07');
+test('formatOscTitle sanitizes control characters and wraps in OSC 0 + OSC 2 sequence', () => {
+  assert.equal(formatOscTitle('● 开发\x07\x1b[31magy-bar'), '\x1b]0;● 开发agy-bar\x07\x1b]2;● 开发agy-bar\x07');
 });
 
 test('resolveTerminalTty prefers ancestor agy TTY over subshell PTY and skips win32', () => {

@@ -2,6 +2,12 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.5.1] - 2026-11-26
+
+### Fixed
+- **Re-sync terminal tab title after `agy -c` restart**: Track the hosting `agy` process PID (`lastTabHostPid`) alongside `lastTabTitle` so restarting `agy` (when shell `preexec` resets the tab title) always re-emits the tab title.
+- **Emit both OSC 0 & OSC 2**: Ensures both window/surface title and tab title update cleanly across Ghostty, iTerm2, Kitty, WezTerm, and macOS Terminal.
+
 ## [0.5.0] - 2026-11-26
 
 ### Added

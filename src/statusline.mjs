@@ -37,10 +37,11 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
         git,
         customTitle: telemetry.customTitle,
         prevTabTitle: telemetry.prevTabTitle,
+        prevTabHostPid: telemetry.prevTabHostPid,
         resolveOpts: { env },
       });
       if (tab.changed && tab.title) {
-        updateSessionTabTitle(telemetry.sessionId, tab.title);
+        updateSessionTabTitle(telemetry.sessionId, tab.title, { hostPid: tab.hostPid });
       }
     }
 
