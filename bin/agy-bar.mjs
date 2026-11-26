@@ -3,11 +3,12 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyConfigCommand, BAR_STYLE_NAMES, COLOR_MODES, loadConfig, PRESET_NAMES, TAB_TITLE_SOURCES } from '../src/config.mjs';
+import { scanConversationHistory } from '../src/history-scan.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
 import { detectModelGroup, selectQuotaEntries } from '../src/render.mjs';
-import { aggregateStats, formatStatsReport, PERIOD_NAMES, readLedger } from '../src/stats.mjs';
+import { aggregateStats, formatStatsReport, HEATMAP_PALETTE_NAMES, PERIOD_NAMES, readLedger, SOURCE_NAMES } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
 import { buildTabTitle, writeOscTitle } from '../src/tab-title.mjs';
 import { armPayloadCapture, listSessions, readCapturedPayload, setSessionCustomTitle, updateSessionTabTitle } from '../src/telemetry.mjs';
@@ -41,9 +42,12 @@ export const HELP_TEXT = [
   `    set <key> <value>...  Set colorMode (${COLOR_MODES.join('|')}), barWidth, ttftWarnSec, dbTiming, ledger`,
   '    reset                 Restore default settings',
   '',
-  '  stats [period] [opts]   Show local CLI token usage, cache savings & estimated API cost',
+  '  stats [period] [opts]   Full-history token dashboard, terminal heatmap & API cost estimate',
   `    period                ${PERIOD_NAMES.join(' | ')} (default: 7d)`,
+  `    --source <src>        ${SOURCE_NAMES.join(' | ')} (default: all — scans CLI + Desktop DBs)`,
+  `    --palette <name>      Heatmap ramp: ${HEATMAP_PALETTE_NAMES.join(' | ')} (default: purple)`,
   '    --model <filter>      Filter by model substring (e.g. claude, carbon, neon)',
+  '    --no-cache            Force full re-scan of conversation DBs',
   '    --json                Output machine-readable JSON',
   '    --plain               Disable ANSI colors',
   '',
@@ -89,7 +93,8 @@ function parseFlags(args) {
     else if (arg === '--capture') flags.capture = true;
     else if (arg === '--show') flags.show = true;
     else if (arg === '--clear') flags.clear = true;
-    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval', '--session'].includes(arg)) {
+    else if (arg === '--no-cache') flags.noCache = true;
+    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval', '--session', '--source', '--palette'].includes(arg)) {
       const value = args[++i];
       if (!value) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -157,15 +162,41 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === 'stats') {
     const { flags, positional } = parseFlags(rest);
     const period = positional[0] || '7d';
-    const entries = readLedger();
-    const report = aggregateStats(entries, { period, modelFilter: flags.model || null });
+    const source = (flags.source || 'all').toLowerCase();
+    if (!SOURCE_NAMES.includes(source)) {
+      throw new Error(`Invalid --source "${source}". Choose one of: ${SOURCE_NAMES.join(', ')}`);
+    }
+    const palette = (flags.palette || 'purple').toLowerCase();
+    if (!HEATMAP_PALETTE_NAMES.includes(palette)) {
+      throw new Error(`Invalid --palette "${palette}". Choose one of: ${HEATMAP_PALETTE_NAMES.join(', ')}`);
+    }
+
+    let entries = [];
+    let sourceLabel = source;
+    if (source === 'ledger') {
+      entries = readLedger();
+    } else {
+      const scan = await scanConversationHistory({
+        sourceFilter: source,
+        useCache: !flags.noCache,
+      });
+      if (scan.supported && scan.entries.length > 0) {
+        entries = scan.entries;
+        sourceLabel = source === 'all' ? 'cli+desktop' : source;
+      } else {
+        entries = readLedger();
+        sourceLabel = 'ledger';
+      }
+    }
+
+    const report = aggregateStats(entries, { period, modelFilter: flags.model || null, sourceLabel });
     if (flags.json) {
       console.log(JSON.stringify(report, null, 2));
       return;
     }
     const cfg = loadConfig();
     const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
-    console.log(formatStatsReport(report, { color, theme: cfg.theme }));
+    console.log(formatStatsReport(report, { color, theme: cfg.theme, heatmapPalette: palette }));
     return;
   }
 

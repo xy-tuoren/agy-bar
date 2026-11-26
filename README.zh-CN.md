@@ -27,7 +27,7 @@
 - **5 分钟缓存过期倒计时** — 显示缓存命中率与剩余保活倒计时（`CACHE 88%·3m42s`），剩余 `≤ 90s` 变黄、`≤ 30s` / `exp` 变红，帮你及时续轮避免重建缓存白烧额度。
 - **项目目录名 + Vim 徽章 + `/compact` 提醒** — 第一行直接展示 `目录名 (分支*)` 及自动识别的 Vim `[NORMAL]` / `[INSERT]` 徽章；当上下文触及危急红线时自动提示 `→/compact`。
 - **精确首字时间 (`TTFT`)、纯流式速率 (`tok/s`)、可选花费 (`~$0.42`) 与上下文增量 (`+12.4K`)** — 在底栏同时展示首字等待时长与纯解码输出速率（`TTFT 1.9s·158t/s`，在 Node 22.13+ 上仅以只读模式读取本地会话数值时间戳，不读聊天正文，Node 20 自动降级为纯 `stdin` 估算，支持 `config set dbTiming off` 关闭），把「等待思考多久」和「真正吐字多快」彻底分开，并同步汇总到 `stats` 与 `monitor`。
-- **本地用量账本与费用估算 (`agy-bar stats`)** — 支持 `today` / `7d` / `30d` / `all` 统计、按模型/思考档位汇总、每日柱状图、**参考 API 预估费用与缓存省钱金额**，并展示本机观测到的额度净变化（非常适合拼车/多号场景对账）。
+- **终端全量 Token 活动面板与热力图 (`agy-bar stats`)** — 只读增量扫描本机 Antigravity CLI 与桌面端全部历史会话库（不读聊天正文，带增量缓存二次运行 `< 20ms`），在终端内直接渲染 **全量 / 今日 / 本月 / 年度 4 项总览卡片**、**52 周真彩终端活动热力图**（`purple` / `green` / `cyan` / `amber` 四套渐变）、连续活跃天数、CLI 与桌面端占比、各模型 TTFT/速率排行、**参考 API 费用与缓存省钱金额**及拼车额度变化。
 - **终端标签页标题自动同步（`● 工作中` / `✓ 已完成`）** — 彻底解决 Ghostty / iTerm2 / Kitty / WezTerm 多开时标签页全叫 `agy --dangerously-skip-permissions` 的痛点：通过标准 OSC 0 自动显示状态图标 + 会话标题（零额外 Token 消耗）；同时提供 `agy-bar title "简短主题"`，让 Agent 利用已有上下文花 ~10 tokens 即可顺手更新标签摘要，零额外 API 请求。
 - **多 CLI 协作监视面板 (`agy-bar monitor`)** — 一屏实时监控本机同时运行的所有 `agy` 终端。
 - **脱敏抓包调试 (`agy-bar debug`)** — 支持单次自动脱敏捕获真实 `agy` payload，排查新版字段变更或提 Issue 极方便。
@@ -74,10 +74,10 @@ npx agy-bar install
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --scenario all --width 116
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --preset compact --theme nord --bar-style smooth
 
-# 查看本机 CLI 用量统计、缓存节省与 API 预估费用
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats today
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 7d --model claude
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --json
+# 查看全量历史 Token 总览卡片、52 周真彩终端热力图与 API 预估费用
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --palette green --source cli
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats all --model neon --json
 
 # 实时监视多个并发 agy 终端
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor

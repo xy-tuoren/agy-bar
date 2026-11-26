@@ -2,6 +2,15 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.6.0] - 2026-11-26
+
+### Added
+- **Full-History Token Activity Dashboard & Terminal Heatmap (`agy-bar stats`)**:
+  - Incremental read-only SQLite scanner (`src/history-scan.mjs`) covering both Antigravity CLI (`~/.gemini/antigravity-cli/conversations/*.db`) and Desktop (`~/.gemini/antigravity/conversations/*.db`) history without reading chat text, backed by an `mtime/size` incremental cache (`scan-cache.json`) for sub-20ms repeat runs.
+  - **4-Card Overview Strip** in the terminal: `ALL-TIME TOTAL`, `TODAY`, `THIS MONTH`, and `YEAR` (with sessions, active days, daily averages, and current/longest streaks).
+  - **True-Color Terminal Activity Heatmap** (`52w` / `32w` / `20w` auto-sized to terminal width) with 4 selectable ramps (`--palette purple|green|cyan|amber`), log-compressed intensity, month labels, and peak day callout.
+  - Source filtering (`--source all|cli|desktop|ledger`), CLI vs Desktop split, thinking-token totals, per-model Avg TTFT + speed + estimated API cost & cache savings, and graceful Node 20 fallback to `ledger.jsonl`.
+
 ## [0.5.1] - 2026-11-26
 
 ### Fixed

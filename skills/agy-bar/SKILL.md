@@ -26,7 +26,7 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>
 | Switch gauge color mode | `... config set colorMode health \| distinct` |
 | Show / hide elements | `... config enable cost session contextDelta` / `... config disable dir ttft speed` |
 | Tune alerts or timing | `... config set ttftWarnSec 8 ttftDangerSec 15 dbTiming on` |
-| Usage & cost report | `... stats today \| 7d \| 30d \| all [--model claude]` |
+| Full-history token heatmap & stats | `... stats [today\|7d\|30d\|all] [--source all\|cli\|desktop\|ledger] [--palette purple\|green\|cyan\|amber]` |
 | Multi-CLI live monitor | `... monitor [--once]` |
 | Redacted payload debug | `... debug --capture` then `... debug` |
 | Preview / Diagnostics | `... preview --scenario all` / `... doctor` |

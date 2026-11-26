@@ -3,7 +3,7 @@ import test from 'node:test';
 import { stripAnsi } from '../src/ansi.mjs';
 import { renderMonitorFrame } from '../src/monitor.mjs';
 import { estimateCost, formatUsd } from '../src/pricing.mjs';
-import { aggregateStats, formatStatsReport } from '../src/stats.mjs';
+import { aggregateStats, formatStatsReport, renderActivityHeatmap } from '../src/stats.mjs';
 
 test('estimateCost computes billed API cost, cache savings, and marks unknown models unpriced', () => {
   const sonnet = estimateCost({
@@ -83,12 +83,19 @@ test('aggregateStats and formatStatsReport summarize periods, model filters, quo
   assert.equal(claudeOnly.turns, 1);
   assert.equal(claudeOnly.models[0].model, 'Claude Sonnet 4.6 (medium)');
 
-  const text = stripAnsi(formatStatsReport(report7d, { color: false }));
-  assert.match(text, /agy-bar usage stats \(7d\)/);
+  const text = stripAnsi(formatStatsReport(report7d, { color: false, now, columns: 120 }));
+  assert.match(text, /agy-bar token stats \(7d/);
+  assert.match(text, /ALL-TIME TOTAL/);
+  assert.match(text, /TODAY/);
+  assert.match(text, /Token Activity \(52w\)/);
   assert.match(text, /By Model/);
   assert.match(text, /Daily Activity/);
   assert.match(text, /saved \$/);
   assert.match(text, /Quota Δ:/);
+
+  const heatColored = renderActivityHeatmap({ '2026-11-26': 200_000_000, '2026-11-25': 50_000_000 }, { now, weeks: 20, heatmapPalette: 'purple', color: true });
+  assert.equal(heatColored.length, 9); // month axis + 7 days + legend
+  assert.ok(heatColored.some((line) => line.includes('\x1b[38;2;216;180;254m■')));
 });
 
 test('renderMonitorFrame displays active multi-CLI sessions and global quotas cleanly', () => {

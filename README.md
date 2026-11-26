@@ -27,7 +27,7 @@ A **zero-dependency, 100% native Antigravity CLI (`agy`) statusline & telemetry 
 - **5-Minute Prompt Cache TTL Countdown** — Displays cache hit rate + remaining freshness (`CACHE 88%·3m42s`), shifting to amber (`<= 90s`) and red (`<= 30s` / `exp`) so you avoid burning quota on cold cache rebuilds.
 - **Smart Workspace, Vim & `/compact` Signals** — Line 1 pairs folder name with Git branch (`agy-bar (main*)`) and automatic `[NORMAL]` / `[INSERT]` Vim badges; line 2 adds an actionable `→/compact` hint when context hits your danger threshold.
 - **Exact First-Token Latency (`TTFT`), Streaming Speed (`tok/s`), Cost (`~$0.42`) & Delta (`+12.4K`)** — Displays first-token wait time (`TTFT 1.9s·158t/s`) separated cleanly from pure streaming decode speed (via read-only numeric step timestamps on Node 22.13+ with pure-`stdin` fallback on Node 20; toggleable via `dbTiming`), plus opt-in live session cost, duration/turns, and context delta.
-- **Local Usage & Cost Ledger (`agy-bar stats`)** — Aggregates `today` / `7d` / `30d` / `all` tokens, cache hit rate, average `tok/s`, **estimated public API cost & cache savings**, daily bar charts, and net observed quota Δ (handy for shared/carpool tracking).
+- **Full-History Terminal Token Dashboard & Heatmap (`agy-bar stats`)** — Incrementally scans local Antigravity CLI & Desktop conversation DBs in read-only mode (never reads chat text; `< 20ms` cached) to render an **All-Time / Today / Month / Year 4-card overview**, a **52-week true-color terminal activity heatmap** (`purple` / `green` / `cyan` / `amber`), streaks, per-model TTFT/speed breakdown, CLI vs Desktop split, **estimated API cost & cache savings**, and net observed quota Δ.
 - **Automatic Terminal Tab Title Sync (`● working` / `✓ idle`)** — Replaces identical `agy --dangerously-skip-permissions` tabs in Ghostty / iTerm2 / Kitty / WezTerm / macOS Terminal with live state + concise conversation title via standard OSC 0 (zero extra tokens). Supports `agy-bar title "<short topic>"` so your Agent can summarize topic shifts in ~10 tokens with zero extra API calls.
 - **Multi-CLI Live Monitor (`agy-bar monitor`)** — Terminal HUD tracking all concurrent `agy` sessions side by side.
 - **Redacted Payload Debugger (`agy-bar debug`)** — Captures a one-shot PII-redacted AGY JSON payload for easy troubleshooting across AGY CLI updates.
@@ -74,10 +74,10 @@ Then **restart `agy`** to see the new statusline (in an existing session, run `/
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --scenario all --width 116
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs preview --preset compact --theme nord --bar-style smooth
 
-# Local usage statistics, cache savings & estimated API cost
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats today
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 7d --model claude
-node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --json
+# Full-history token dashboard, 52-week terminal heatmap & estimated API cost
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats 30d --palette green --source cli
+node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs stats all --model neon --json
 
 # Live multi-CLI HUD
 node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs monitor
