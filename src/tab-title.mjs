@@ -190,6 +190,7 @@ export function syncTabTitle(
     customTitle = null,
     prevTabTitle = null,
     prevTabHostPid = null,
+    hostPidHint = null,
     force = false,
     ttyPath = null,
     writer = null,
@@ -203,6 +204,19 @@ export function syncTabTitle(
   const title = buildTabTitle(payload, { config, git, customTitle });
   if (!title) {
     return { changed: false, written: false, title: null, tty: null, hostPid: null };
+  }
+
+  // Fast path: skip spawning `ps` when neither title nor host agy PID changed.
+  if (
+    !force &&
+    !writer &&
+    !ttyPath &&
+    title === prevTabTitle &&
+    prevTabHostPid !== null &&
+    typeof hostPidHint === 'number' &&
+    hostPidHint === prevTabHostPid
+  ) {
+    return { changed: false, written: false, title, tty: null, hostPid: prevTabHostPid };
   }
 
   const resolved = !writer && !ttyPath ? resolveTerminalTarget(resolveOpts) : { tty: ttyPath, hostPid: null };

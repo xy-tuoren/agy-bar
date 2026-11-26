@@ -98,53 +98,59 @@ test('aggregateStats and formatStatsReport summarize periods, model filters, quo
   assert.ok(heatColored.some((line) => line.includes('\x1b[38;2;216;180;254m■')));
 });
 
-test('renderMonitorFrame displays active multi-CLI sessions and global quotas cleanly', () => {
+test('renderMonitorFrame displays active multi-CLI sessions, CJK alignment, cost, and friendly quota labels', () => {
   const now = 1_795_600_000_000;
-  const frame = stripAnsi(
-    renderMonitorFrame(
-      [
-        {
-          sessionId: 'sess-1',
-          ageMs: 2_000,
-          isBusy: true,
-          agentState: 'working',
-          workspaceName: 'agy-bar',
-          branch: 'main',
-          dirty: true,
-          model: 'Gemini 4 Carbon',
-          usedPct: 48.2,
-          cacheHitPct: 88,
-          lastActivityAt: now - 45_000,
-          lastSpeedTokPerSec: 145,
-          quota: {
-            'gemini-5h': { remaining: 0.82, reset_in_seconds: 7200 },
-            'gemini-weekly': { remaining: 0.61, reset_in_seconds: 259200 },
-          },
+  const colored = renderMonitorFrame(
+    [
+      {
+        sessionId: 'sess-1',
+        ageMs: 2_000,
+        isBusy: true,
+        agentState: 'working',
+        workspaceName: '中文项目',
+        branch: 'main',
+        dirty: true,
+        model: 'Gemini 4 Carbon',
+        usedPct: 48.2,
+        cacheHitPct: 88,
+        lastActivityAt: now - 45_000,
+        lastSpeedTokPerSec: 145,
+        sessionCostUsd: 1.24,
+        quota: {
+          'gemini-5h': { remaining: 0.82, reset_in_seconds: 7200 },
+          'gemini-weekly': { remaining: 0.61, reset_in_seconds: 259200 },
         },
-        {
-          sessionId: 'sess-2',
-          ageMs: 90_000,
-          isBusy: false,
-          agentState: 'idle',
-          workspaceName: 'web-app',
-          branch: 'feat/auth',
-          dirty: false,
-          model: 'Claude Sonnet 4.6',
-          usedPct: 76.0,
-          cacheHitPct: 64,
-          lastActivityAt: now - 350_000,
-          lastSpeedTokPerSec: 88,
-          quota: null,
-        },
-      ],
-      { now, color: false },
-    ),
+      },
+      {
+        sessionId: 'sess-2',
+        ageMs: 90_000,
+        isBusy: false,
+        agentState: 'idle',
+        workspaceName: 'web-app',
+        branch: 'feat/auth',
+        dirty: false,
+        model: 'Claude Sonnet 4.6',
+        usedPct: 76.0,
+        cacheHitPct: 64,
+        lastActivityAt: now - 350_000,
+        lastSpeedTokPerSec: 88,
+        sessionCostUsd: 0.42,
+        quota: null,
+      },
+    ],
+    { now, color: true, config: { theme: 'slate-dark', colorMode: 'health', barStyle: 'segments', cacheTtlSec: 300, contextWarn: 70, contextDanger: 88, quotaWarn: 25, quotaDanger: 10 } },
   );
 
+  // Health colorMode uses good green (52;211;153) for healthy 48.2% context bar.
+  assert.ok(colored.includes('\x1b[38;2;52;211;153m▮▮▮'));
+
+  const frame = stripAnsi(colored);
   assert.match(frame, /2 recent CLI sessions \(2 active\)/);
-  assert.match(frame, /gemini-5h .*82%/);
-  assert.match(frame, /agy-bar:main\*/);
+  assert.match(frame, /5h .*82%/);
+  assert.match(frame, /7d .*61%/);
+  assert.match(frame, /中文项目:main\*/);
   assert.match(frame, /145t\/s/);
+  assert.match(frame, /\$1\.24/);
   assert.match(frame, /web-app:feat\/auth/);
   assert.match(frame, /exp/);
 });

@@ -7,7 +7,9 @@ import { getOrRefreshUsageSummary } from './history-scan.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
-import { maybeCaptureRedactedPayload, recordTelemetry, updateSessionTabTitle } from './telemetry.mjs';
+import { maybeCaptureRedactedPayload, peekSessionState, recordTelemetry, updateSessionTabTitle } from './telemetry.mjs';
+
+const GIT_DIRTY_CACHE_MS = 3000;
 
 export async function runStatusline({ stdin = process.stdin, stdout = process.stdout, env = process.env, argv = process.argv } = {}) {
   let raw = '';
@@ -21,13 +23,32 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
 
   try {
     const payload = JSON.parse(raw);
+    const now = Date.now();
     maybeCaptureRedactedPayload(payload);
+    const prevSession = peekSessionState(payload);
     const cwd = payload?.workspace?.current_dir || payload?.cwd || null;
-    const git = config.show.git && cwd ? readGitInfo(cwd, { checkDirty: config.show.gitDirty }) : null;
-    const stepTiming = config.dbTiming ? await readLatestStepTiming(payload) : null;
+    const canReuseGitDirty = Boolean(
+      config.show.gitDirty &&
+        prevSession &&
+        prevSession.cwd === cwd &&
+        typeof prevSession.gitCheckedAt === 'number' &&
+        now - prevSession.gitCheckedAt < GIT_DIRTY_CACHE_MS,
+    );
+    const git =
+      config.show.git && cwd
+        ? readGitInfo(cwd, {
+            checkDirty: config.show.gitDirty,
+            cachedDirty: canReuseGitDirty ? Boolean(prevSession.dirty) : null,
+          })
+        : null;
+    const stepTiming = config.dbTiming
+      ? await readLatestStepTiming(payload, { prevDbStamp: prevSession?.dbStamp ?? null })
+      : null;
     const telemetry = recordTelemetry(payload, {
+      now,
       git,
       stepTiming,
+      prevSession,
       cacheTtlSec: config.cacheTtlSec,
       enableLedger: config.ledger,
     });
@@ -42,6 +63,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       config.show.cost
     ) {
       usageSummary = await getOrRefreshUsageSummary({
+        now,
         sessionId: telemetry.sessionId,
         deltaTokens: telemetry.turnTokensDelta || 0,
         deltaCostUsd: telemetry.turnCostDeltaUsd || 0,
@@ -62,6 +84,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
         customTitle: telemetry.customTitle,
         prevTabTitle: telemetry.prevTabTitle,
         prevTabHostPid: telemetry.prevTabHostPid,
+        hostPidHint: process.ppid,
         resolveOpts: { env },
       });
       if (tab.changed && tab.title) {
@@ -71,6 +94,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
 
     const rendered = renderStatusline(payload, {
       config,
+      now,
       color,
       git,
       telemetry: effectiveTelemetry,

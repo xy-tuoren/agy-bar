@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { configDir } from './config.mjs';
+import { writeFileAtomic } from './fs-atomic.mjs';
 import { estimateCost } from './pricing.mjs';
-import { parseStepTimingMetadata } from './step-timing.mjs';
+import { decodePbFields, parseStepTimingMetadata } from './step-timing.mjs';
 
 const MODEL_ENUM_MAP = Object.freeze({
   1535: 'Gemini 4 Neon',
@@ -15,45 +16,6 @@ const MODEL_ENUM_MAP = Object.freeze({
 });
 
 const CACHE_SCHEMA_VERSION = 1;
-
-function decodePbFields(buf) {
-  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
-  let offset = 0;
-  const fields = {};
-
-  const readVarint = () => {
-    let value = 0n;
-    for (let shift = 0n; shift < 70n && offset < b.length; shift += 7n) {
-      const byte = b[offset++];
-      value |= BigInt(byte & 127) << shift;
-      if (byte < 128) return Number(value);
-    }
-    throw new Error('Incomplete protobuf varint');
-  };
-
-  while (offset < b.length) {
-    const tag = readVarint();
-    const field = tag >>> 3;
-    const wire = tag & 7;
-    if (wire === 0) {
-      fields[field] = readVarint();
-    } else if (wire === 1) {
-      if (offset + 8 > b.length) throw new Error('Incomplete fixed64');
-      offset += 8;
-    } else if (wire === 5) {
-      if (offset + 4 > b.length) throw new Error('Incomplete fixed32');
-      offset += 4;
-    } else if (wire === 2) {
-      const len = readVarint();
-      if (len < 0 || offset + len > b.length) throw new Error('Incomplete length-delimited field');
-      fields[field] = b.subarray(offset, offset + len);
-      offset += len;
-    } else {
-      throw new Error(`Unsupported wire type: ${wire}`);
-    }
-  }
-  return fields;
-}
 
 export function resolveModelEnum(enumId) {
   if (typeof enumId !== 'number' || !Number.isFinite(enumId)) return 'Unknown';
@@ -207,8 +169,7 @@ export function readUsageSummary({ baseDir = configDir(homedir()) } = {}) {
 export function saveUsageSummary(summary, { baseDir = configDir(homedir()) } = {}) {
   const path = usageSummaryPath(baseDir);
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(summary) + '\n', 'utf8');
+    writeFileAtomic(path, JSON.stringify(summary) + '\n');
   } catch {
     // Ignore write failures silently.
   }
@@ -309,8 +270,7 @@ function loadScanCache(cacheFile) {
 
 function saveScanCache(cacheFile, cache) {
   try {
-    mkdirSync(dirname(cacheFile), { recursive: true });
-    writeFileSync(cacheFile, JSON.stringify(cache), 'utf8');
+    writeFileAtomic(cacheFile, JSON.stringify(cache));
   } catch {
     // Ignore write failures silently.
   }

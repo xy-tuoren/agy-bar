@@ -11,6 +11,8 @@
 
 ![agy-bar 真彩渲染预览](./assets/preview.svg)
 
+![agy-bar 52 周终端 Token 热力图预览](./assets/stats-preview.svg)
+
 ---
 
 ## 为什么选 `agy-bar`？（零风险、纯原生 CLI 设计）

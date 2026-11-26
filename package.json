@@ -1,6 +1,6 @@
 {
   "name": "agy-bar",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "Zero-dependency terminal statusline, no-TUN proxy launcher, exact TTFT & tok/s speed, 5-min cache TTL countdown, automatic tab titles, full-history token heatmap & stats, and multi-CLI monitor for Antigravity CLI (agy).",
   "type": "module",
   "license": "MIT",
@@ -46,7 +46,7 @@
     "install:agy": "node bin/agy-bar.mjs install",
     "uninstall:agy": "node bin/agy-bar.mjs uninstall",
     "preview": "node bin/agy-bar.mjs preview",
-    "preview:svg": "node scripts/generate-preview-svg.mjs",
+    "preview:svg": "node scripts/generate-preview-svg.mjs && node scripts/generate-stats-svg.mjs",
     "stats": "node bin/agy-bar.mjs stats",
     "monitor": "node bin/agy-bar.mjs monitor",
     "debug": "node bin/agy-bar.mjs debug",

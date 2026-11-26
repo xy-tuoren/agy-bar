@@ -18,7 +18,10 @@ test('reads branch name from nested folder inside a git repository', () => {
     assert.equal(readBranchFromGitDir(found.gitDir), 'feat/dashboard');
 
     const info = readGitInfo(nested, { checkDirty: false });
-    assert.deepEqual(info, { branch: 'feat/dashboard', dirty: false, workTree: found.workTree });
+    assert.deepEqual(info, { branch: 'feat/dashboard', dirty: false, dirtyChecked: false, workTree: found.workTree });
+
+    const cached = readGitInfo(nested, { checkDirty: true, cachedDirty: true });
+    assert.deepEqual(cached, { branch: 'feat/dashboard', dirty: true, dirtyChecked: false, workTree: found.workTree });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

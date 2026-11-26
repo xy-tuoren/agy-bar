@@ -89,6 +89,22 @@ test('syncTabTitle deduplicates unchanged writes and writes OSC 0 when state or 
   assert.equal(third.changed, true);
   assert.equal(third.title, '✓ 调试状态栏');
   assert.equal(writes.length, 2);
+
+  // Fast path: when title and hostPidHint match previous write, skips resolveTerminalTarget (zero `ps` spawns).
+  const fastSkipped = syncTabTitle(payload, {
+    config: { tabTitle: true },
+    prevTabTitle: first.title,
+    prevTabHostPid: 4242,
+    hostPidHint: 4242,
+    resolveOpts: {
+      readProc: () => {
+        throw new Error('fast path must not spawn ps');
+      },
+    },
+  });
+  assert.equal(fastSkipped.changed, false);
+  assert.equal(fastSkipped.written, false);
+  assert.equal(fastSkipped.hostPid, 4242);
 });
 
 test('setSessionCustomTitle persists override and auto-clears if AGY conversation_title changes via /rename', () => {

@@ -2,6 +2,21 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.0] - 2026-11-26
+
+### Performance & Reliability
+- **Zero-Subprocess Statusline Hot Path (`tab-title.mjs`, `git.mjs`, `step-timing.mjs`, `statusline.mjs`)**:
+  - Added a `process.ppid === prevTabHostPid` fast path in `syncTabTitle` that skips spawning `ps` completely whenever neither title nor host `agy` PID changed.
+  - Added a 3-second per-session cache for `git status --porcelain` dirty checks while keeping branch reads instant via `.git/HEAD`.
+  - Added a `statSync` `.db`/`.db-wal` version-stamp (`dbStamp`) short-circuit in `readLatestStepTiming` so unchanged SQLite databases are never reopened on idle refreshes.
+  - Peeked session state once per refresh (`peekSessionState`) instead of reading the session JSON multiple times.
+- **Atomic File Writes (`src/fs-atomic.mjs`)**: Switched `config.json`, `sessions/*.json`, `usage-summary.json`, `scan-cache.json`, and captured payloads to temp-file + `renameSync` atomic replacement to eliminate race-condition corruption across concurrent `agy` terminals.
+- **Deduplicated Protobuf Decoder**: Shared `decodePbFields` between `step-timing.mjs` and `history-scan.mjs`.
+
+### Improved
+- **`agy-bar monitor` Polish (`src/monitor.mjs`)**: Fixed CJK display-width column alignment via `visibleWidth`/`clipPlain`, aligned context bar colors with `config.colorMode`, replaced raw quota keys (`gemini-5h`) with clean labels (`5h`, `7d`, `Claude 5h`), and added a live `Cost` column.
+- **Visual Showcase & CI**: Added reproducible 52-week heatmap SVG preview (`assets/stats-preview.svg`) to READMEs and expanded cross-platform CI smoke tests to cover `config show`, `proxy status --json`, and `proxy env`.
+
 ## [0.8.2] - 2026-11-26
 
 ### Added

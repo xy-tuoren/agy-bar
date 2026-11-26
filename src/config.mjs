@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { writeFileAtomic } from './fs-atomic.mjs';
 import { DEFAULT_PROXY_CONFIG, isDefaultProxyConfig, normalizeProxyConfig } from './proxy.mjs';
 import { THEME_NAMES } from './themes.mjs';
 
@@ -400,9 +401,8 @@ export function loadConfig(path = configPath()) {
 }
 
 export function saveConfig(cfg, path = configPath()) {
-  mkdirSync(dirname(path), { recursive: true });
   const serialized = serializeConfig(cfg);
-  writeFileSync(path, JSON.stringify(serialized, null, 2) + '\n', 'utf8');
+  writeFileAtomic(path, JSON.stringify(serialized, null, 2) + '\n');
   return normalizeConfig(serialized);
 }
 

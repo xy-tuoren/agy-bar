@@ -1,8 +1,17 @@
-import { bold, fg } from './ansi.mjs';
+import { bold, clipPlain, fg, visibleWidth } from './ansi.mjs';
 import { loadConfig } from './config.mjs';
+import { formatUsd } from './pricing.mjs';
 import { formatReset, formatTtft, renderBar } from './render.mjs';
 import { listSessions } from './telemetry.mjs';
 import { resolvePalette } from './themes.mjs';
+
+const QUOTA_LABELS = Object.freeze({
+  'gemini-5h': '5h',
+  'gemini-weekly': '7d',
+  '3p-5h': 'Claude 5h',
+  '3p-weekly': 'Claude 7d',
+  'gemini-argon-wtu-weekly': 'Argon 7d',
+});
 
 function formatAge(ms) {
   const sec = Math.max(0, Math.round(ms / 1000));
@@ -24,12 +33,19 @@ function formatTtl(lastActivityAt, ttlSec, now) {
 
 function padRight(text, len) {
   const s = String(text || '');
-  return s.length > len ? `${s.slice(0, Math.max(1, len - 1))}…` : s + ' '.repeat(len - s.length);
+  const w = visibleWidth(s);
+  if (w > len) {
+    const clipped = clipPlain(s, Math.max(1, len - 1));
+    const rem = Math.max(0, len - visibleWidth(clipped) - 1);
+    return `${clipped}…${' '.repeat(rem)}`;
+  }
+  return s + ' '.repeat(Math.max(0, len - w));
 }
 
 function padLeft(text, len) {
   const s = String(text || '');
-  return s.length >= len ? s : ' '.repeat(len - s.length) + s;
+  const w = visibleWidth(s);
+  return w >= len ? s : ' '.repeat(len - w) + s;
 }
 
 export function renderMonitorFrame(sessions, { now = Date.now(), config = loadConfig(), color = true } = {}) {
@@ -37,13 +53,14 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
   const useColor = color && resolved.color;
   const p = resolved.palette;
   const lines = [];
+  const ruleWidth = 98;
 
   const activeCount = sessions.filter((s) => s.ageMs <= 5 * 60 * 1000).length;
   lines.push(
     bold(fg('agy-bar monitor', p.accent, useColor), useColor) +
       fg(` · ${sessions.length} recent CLI session${sessions.length === 1 ? '' : 's'} (${activeCount} active) · Ctrl+C to quit`, p.muted, useColor),
   );
-  lines.push(fg('─'.repeat(92), p.sep, useColor));
+  lines.push(fg('─'.repeat(ruleWidth), p.sep, useColor));
 
   // Show latest observed global quota from most recent session that has quota data.
   const latestQuota = sessions.find((s) => s.quota)?.quota;
@@ -54,11 +71,12 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
       const tone = pct <= config.quotaDanger ? p.danger : pct <= config.quotaWarn ? p.warn : p.good;
       const bar = renderBar(q.remaining, { width: 6, style: config.barStyle, fillColor: tone, trackColor: p.track, color: useColor });
       const reset = formatReset(q, now);
-      qItems.push(`${fg(id, p.muted, useColor)} ${bar} ${fg(`${pct}%`, tone, useColor)}${reset ? fg(` (${reset})`, p.muted, useColor) : ''}`);
+      const label = QUOTA_LABELS[id] || id;
+      qItems.push(`${fg(label, p.muted, useColor)} ${bar} ${fg(`${pct}%`, tone, useColor)}${reset ? fg(` (${reset})`, p.muted, useColor) : ''}`);
     }
     if (qItems.length > 0) {
       lines.push(`${fg('Quota: ', p.muted, useColor)}${qItems.join(fg(' │ ', p.sep, useColor))}`);
-      lines.push(fg('─'.repeat(92), p.sep, useColor));
+      lines.push(fg('─'.repeat(ruleWidth), p.sep, useColor));
     }
   }
 
@@ -70,11 +88,13 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
 
   lines.push(
     fg(
-      `${padRight('State', 10)} ${padRight('Workspace / Branch', 22)} ${padRight('Model', 17)} ${padRight('Context', 14)} ${padRight('Cache / TTL', 13)} ${padLeft('TTFT', 6)} ${padLeft('Speed', 7)}`,
+      `${padRight('State', 10)} ${padRight('Workspace / Branch', 22)} ${padRight('Model', 17)} ${padRight('Context', 14)} ${padRight('Cache / TTL', 12)} ${padLeft('TTFT', 6)} ${padLeft('Speed', 7)} ${padLeft('Cost', 7)}`,
       p.muted,
       useColor,
     ),
   );
+
+  const healthyCtxColor = config.colorMode === 'distinct' ? p.accent : p.good;
 
   for (const s of sessions) {
     const dot = s.isBusy ? fg('●', p.warn, useColor) : s.ageMs <= 5 * 60 * 1000 ? fg('●', p.good, useColor) : fg('○', p.muted, useColor);
@@ -86,7 +106,7 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
 
     const pct = typeof s.usedPct === 'number' ? s.usedPct : null;
     const ctxTone =
-      pct === null ? p.muted : pct >= config.contextDanger ? p.danger : pct >= config.contextWarn ? p.warn : p.accent;
+      pct === null ? p.muted : pct >= config.contextDanger ? p.danger : pct >= config.contextWarn ? p.warn : healthyCtxColor;
     const ctxBar = renderBar(pct === null ? 0 : pct / 100, {
       width: 6,
       style: config.barStyle,
@@ -98,9 +118,10 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
 
     const cachePct = typeof s.cacheHitPct === 'number' ? `${Math.round(s.cacheHitPct)}%` : '--';
     const ttl = formatTtl(s.lastActivityAt, config.cacheTtlSec, now);
-    const cacheCell = padRight(`${cachePct}·${ttl}`, 13);
+    const cacheCell = padRight(`${cachePct}·${ttl}`, 12);
     const ttftCell = padLeft(typeof s.lastTtftMs === 'number' && s.lastTtftMs > 0 ? formatTtft(s.lastTtftMs) : '--', 6);
     const speedCell = padLeft(typeof s.lastSpeedTokPerSec === 'number' ? `${Math.round(s.lastSpeedTokPerSec)}t/s` : '--', 7);
+    const costCell = padLeft(typeof s.sessionCostUsd === 'number' && s.sessionCostUsd > 0 ? formatUsd(s.sessionCostUsd) : '--', 7);
 
     lines.push(
       `${dot} ${fg(stateLabel, s.isBusy ? p.warn : p.text, useColor)} ` +
@@ -109,7 +130,8 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
         `${ctxBar} ${fg(ctxText, ctxTone, useColor)}   ` +
         `${fg(cacheCell, ttl === 'exp' ? p.danger : p.muted, useColor)} ` +
         `${fg(ttftCell, p.text, useColor)} ` +
-        `${fg(speedCell, p.accent, useColor)} ${fg(formatAge(s.ageMs), p.muted, useColor)}`,
+        `${fg(speedCell, p.accent, useColor)} ` +
+        `${fg(costCell, p.good, useColor)} ${fg(formatAge(s.ageMs), p.muted, useColor)}`,
     );
   }
 

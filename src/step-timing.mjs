@@ -1,10 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const UUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
-function decodePbFields(buf) {
+export function decodePbFields(buf) {
   const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
   let offset = 0;
   const fields = {};
@@ -111,12 +111,36 @@ export function parseStepTimingMetadata(metadata, idx = null) {
   }
 }
 
-export async function readLatestStepTiming(payload, { home = homedir() } = {}) {
+export function getDbVersionStamp(dbPath) {
+  try {
+    const main = statSync(dbPath);
+    let walStamp = '0:0';
+    const walPath = `${dbPath}-wal`;
+    if (existsSync(walPath)) {
+      try {
+        const wal = statSync(walPath);
+        walStamp = `${Math.trunc(wal.mtimeMs)}:${wal.size}`;
+      } catch {
+        // Ignore transient WAL removal between existsSync and statSync.
+      }
+    }
+    return `${Math.trunc(main.mtimeMs)}:${main.size}:${walStamp}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function readLatestStepTiming(payload, { home = homedir(), prevDbStamp = null } = {}) {
   const id = payload?.conversation_id || payload?.session_id;
   if (typeof id !== 'string' || !UUID_RE.test(id)) return null;
 
   const dbPath = join(home, '.gemini', 'antigravity-cli', 'conversations', `${id}.db`);
   if (!existsSync(dbPath)) return null;
+
+  const dbStamp = getDbVersionStamp(dbPath);
+  if (prevDbStamp && dbStamp && dbStamp === prevDbStamp) {
+    return { unchanged: true, dbStamp };
+  }
 
   let db;
   try {
@@ -125,7 +149,8 @@ export async function readLatestStepTiming(payload, { home = homedir() } = {}) {
     const row = db
       .prepare('SELECT idx, metadata FROM steps WHERE step_type = 15 AND status = 3 ORDER BY idx DESC LIMIT 1')
       .get();
-    return row ? parseStepTimingMetadata(row.metadata, row.idx) : null;
+    const parsed = row ? parseStepTimingMetadata(row.metadata, row.idx) : null;
+    return parsed ? { ...parsed, dbStamp } : dbStamp ? { unchanged: false, dbStamp } : null;
   } catch {
     // Gracefully fall back on Node < 22.13, locked DBs, or schema changes.
     return null;

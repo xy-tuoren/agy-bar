@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { sanitizeText } from './ansi.mjs';
 import { configDir } from './config.mjs';
+import { writeFileAtomic } from './fs-atomic.mjs';
 import { estimateCost } from './pricing.mjs';
 
 const BUSY_STATES = new Set(['working', 'tool_use', 'thinking']);
@@ -78,7 +79,7 @@ export function maybeCaptureRedactedPayload(payload, { baseDir = configDir(homed
       capturedAt: new Date(now).toISOString(),
       payload: redactPayload(payload, home),
     };
-    writeFileSync(capturedPayloadPath(baseDir), JSON.stringify(redacted, null, 2) + '\n', 'utf8');
+    writeFileAtomic(capturedPayloadPath(baseDir), JSON.stringify(redacted, null, 2) + '\n');
     rmSync(sentinel, { force: true });
     return true;
   } catch {
@@ -120,6 +121,11 @@ function readSessionFile(filePath) {
   }
 }
 
+export function peekSessionState(payload = {}, { baseDir = configDir(homedir()) } = {}) {
+  const sessionId = deriveSessionId(payload);
+  return readSessionFile(join(sessionsDir(baseDir), `${sessionId}.json`));
+}
+
 function normalizeModelName(model) {
   const raw = sanitizeText(model?.display_name || model?.id || '');
   const effort = sanitizeText(model?.effort || '');
@@ -150,6 +156,7 @@ export function recordTelemetry(
     now = Date.now(),
     git = null,
     stepTiming = null,
+    prevSession = undefined,
     baseDir = configDir(homedir()),
     cacheTtlSec = 300,
     enableLedger = true,
@@ -159,7 +166,7 @@ export function recordTelemetry(
   const sessionId = deriveSessionId(p);
   const sDir = sessionsDir(baseDir);
   const sFile = join(sDir, `${sessionId}.json`);
-  const prev = readSessionFile(sFile);
+  const prev = prevSession !== undefined ? prevSession : readSessionFile(sFile);
 
   const ctx = p.context_window || {};
   const usage = ctx.current_usage && typeof ctx.current_usage === 'object' ? ctx.current_usage : null;
@@ -215,34 +222,38 @@ export function recordTelemetry(
   let hasDbCompletedAt = false;
   // Prefer exact step-level timestamps from local AGY read-only step metadata when available.
   if (stepTiming && typeof stepTiming === 'object') {
-    const dbTtft = nonNeg(stepTiming.ttftMs);
-    if (dbTtft !== null && dbTtft <= 600_000) {
-      lastTtftMs = dbTtft;
-    }
-    const dbCompleted = nonNeg(stepTiming.completedAtMs);
-    if (dbCompleted !== null) {
-      lastActivityAt = dbCompleted;
+    if (stepTiming.unchanged === true && lastActivityAt !== null) {
       hasDbCompletedAt = true;
-    }
-    const dbStreamMs = nonNeg(stepTiming.streamMs);
-    const dbTotalMs = nonNeg(stepTiming.totalMs);
-    const dbOut = nonNeg(stepTiming.outputTokens);
-    const dbVisibleOut = nonNeg(stepTiming.visibleOutputTokens);
-    let computedRate = null;
-    if (dbStreamMs !== null && dbStreamMs >= 400) {
-      const streamTokens = dbVisibleOut !== null && dbVisibleOut > 0 ? dbVisibleOut : dbOut;
-      if (streamTokens !== null && streamTokens > 0) {
-        const candidate = streamTokens / (dbStreamMs / 1000);
+    } else {
+      const dbTtft = nonNeg(stepTiming.ttftMs);
+      if (dbTtft !== null && dbTtft <= 600_000) {
+        lastTtftMs = dbTtft;
+      }
+      const dbCompleted = nonNeg(stepTiming.completedAtMs);
+      if (dbCompleted !== null) {
+        lastActivityAt = dbCompleted;
+        hasDbCompletedAt = true;
+      }
+      const dbStreamMs = nonNeg(stepTiming.streamMs);
+      const dbTotalMs = nonNeg(stepTiming.totalMs);
+      const dbOut = nonNeg(stepTiming.outputTokens);
+      const dbVisibleOut = nonNeg(stepTiming.visibleOutputTokens);
+      let computedRate = null;
+      if (dbStreamMs !== null && dbStreamMs >= 400) {
+        const streamTokens = dbVisibleOut !== null && dbVisibleOut > 0 ? dbVisibleOut : dbOut;
+        if (streamTokens !== null && streamTokens > 0) {
+          const candidate = streamTokens / (dbStreamMs / 1000);
+          if (candidate > 0 && candidate < 600) computedRate = candidate;
+        }
+      }
+      if (computedRate === null && dbOut !== null && dbOut > 0 && dbTotalMs !== null && dbTotalMs >= 200) {
+        const candidate = dbOut / (dbTotalMs / 1000);
         if (candidate > 0 && candidate < 600) computedRate = candidate;
       }
-    }
-    if (computedRate === null && dbOut !== null && dbOut > 0 && dbTotalMs !== null && dbTotalMs >= 200) {
-      const candidate = dbOut / (dbTotalMs / 1000);
-      if (candidate > 0 && candidate < 600) computedRate = candidate;
-    }
-    if (computedRate !== null) {
-      lastSpeedTokPerSec = Math.round(computedRate * 10) / 10;
-      lastTurnDurationMs = dbTotalMs ?? dbStreamMs;
+      if (computedRate !== null) {
+        lastSpeedTokPerSec = Math.round(computedRate * 10) / 10;
+        lastTurnDurationMs = dbTotalMs ?? dbStreamMs;
+      }
     }
   }
 
@@ -374,6 +385,8 @@ export function recordTelemetry(
     workspaceName: cwd ? basename(cwd) : prev?.workspaceName || null,
     branch: git?.branch || prev?.branch || null,
     dirty: typeof git?.dirty === 'boolean' ? git.dirty : Boolean(prev?.dirty),
+    gitCheckedAt: git?.dirtyChecked ? now : prev?.gitCheckedAt ?? null,
+    dbStamp: stepTiming?.dbStamp ?? prev?.dbStamp ?? null,
     agentState: sanitizeText(p.agent_state || '') || 'idle',
     isBusy,
     conversationTitle,
@@ -403,8 +416,7 @@ export function recordTelemetry(
   };
 
   try {
-    mkdirSync(sDir, { recursive: true });
-    writeFileSync(sFile, JSON.stringify(nextState) + '\n', 'utf8');
+    writeFileAtomic(sFile, JSON.stringify(nextState) + '\n');
   } catch {
     // Ignore write failures silently.
   }
@@ -438,10 +450,9 @@ export function updateSessionTabTitle(sessionId, tabTitle, { hostPid = null, bas
   const prev = readSessionFile(sFile);
   if (!prev) return false;
   try {
-    writeFileSync(
+    writeFileAtomic(
       sFile,
       JSON.stringify({ ...prev, lastTabTitle: tabTitle, ...(hostPid !== null ? { lastTabHostPid: hostPid } : {}) }) + '\n',
-      'utf8',
     );
     return true;
   } catch {
@@ -473,8 +484,7 @@ export function setSessionCustomTitle(
     lastTabTitle: null,
   };
 
-  mkdirSync(sDir, { recursive: true });
-  writeFileSync(sFile, JSON.stringify(next) + '\n', 'utf8');
+  writeFileAtomic(sFile, JSON.stringify(next) + '\n');
   return next;
 }
 

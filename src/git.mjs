@@ -50,7 +50,7 @@ export function readBranchFromGitDir(gitDir) {
   }
 }
 
-export function readGitInfo(cwd, { checkDirty = true, timeoutMs = 120 } = {}) {
+export function readGitInfo(cwd, { checkDirty = true, cachedDirty = null, timeoutMs = 120 } = {}) {
   if (!cwd || typeof cwd !== 'string') return null;
   const located = findGitDir(cwd);
   if (!located) return null;
@@ -58,7 +58,11 @@ export function readGitInfo(cwd, { checkDirty = true, timeoutMs = 120 } = {}) {
   if (!branch) return null;
 
   let dirty = false;
-  if (checkDirty) {
+  let dirtyChecked = false;
+  if (checkDirty && typeof cachedDirty === 'boolean') {
+    dirty = cachedDirty;
+  } else if (checkDirty) {
+    dirtyChecked = true;
     try {
       const out = execFileSync(
         'git',
@@ -77,5 +81,5 @@ export function readGitInfo(cwd, { checkDirty = true, timeoutMs = 120 } = {}) {
     }
   }
 
-  return { branch, dirty, workTree: located.workTree };
+  return { branch, dirty, dirtyChecked, workTree: located.workTree };
 }

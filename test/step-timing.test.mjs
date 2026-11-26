@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import { parseStepTimingMetadata } from '../src/step-timing.mjs';
+import { writeFileAtomic } from '../src/fs-atomic.mjs';
+import { getDbVersionStamp, parseStepTimingMetadata, readLatestStepTiming } from '../src/step-timing.mjs';
 
 function encodeVarint(n) {
   let v = BigInt(n);
@@ -51,4 +55,31 @@ test('parseStepTimingMetadata returns null safely on malformed or empty buffers'
   assert.equal(parseStepTimingMetadata(null), null);
   assert.equal(parseStepTimingMetadata(Buffer.alloc(0)), null);
   assert.equal(parseStepTimingMetadata(Buffer.from([0xff, 0xff, 0xff])), null);
+});
+
+test('getDbVersionStamp short-circuits readLatestStepTiming when unchanged and writeFileAtomic leaves no temp files', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-dbstamp-'));
+  try {
+    const id = '11111111-2222-3333-4444-555555555555';
+    const convDir = join(fakeHome, '.gemini', 'antigravity-cli', 'conversations');
+    mkdirSync(convDir, { recursive: true });
+    const dbFile = join(convDir, `${id}.db`);
+    writeFileAtomic(dbFile, 'stub-db');
+    assert.equal(readFileSync(dbFile, 'utf8'), 'stub-db');
+    assert.deepEqual(readdirSync(convDir), [`${id}.db`]);
+
+    const stamp1 = getDbVersionStamp(dbFile);
+    assert.ok(stamp1);
+
+    // Matching prevDbStamp skips opening SQLite completely (even on non-SQLite stub file).
+    const skipped = await readLatestStepTiming({ conversation_id: id }, { home: fakeHome, prevDbStamp: stamp1 });
+    assert.deepEqual(skipped, { unchanged: true, dbStamp: stamp1 });
+
+    // Writing a WAL changes the version stamp immediately.
+    writeFileSync(`${dbFile}-wal`, 'wal-change');
+    const stamp2 = getDbVersionStamp(dbFile);
+    assert.notEqual(stamp2, stamp1);
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
 });

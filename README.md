@@ -11,6 +11,8 @@ A **zero-dependency, 100% native Antigravity CLI (`agy`) statusline & telemetry 
 
 ![agy-bar true-color preview](./assets/preview.svg)
 
+![agy-bar 52-week terminal token heatmap preview](./assets/stats-preview.svg)
+
 ---
 
 ## Why `agy-bar`? (Zero-Risk, CLI-Native Design)
