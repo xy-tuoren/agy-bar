@@ -2,6 +2,17 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.7.3] - 2026-11-26
+
+### Added
+- **Crisp Segmented Gauge Styles (`segments`, `squares`, `pills`, `dots`)**:
+  - Added 4 distinct cell-separated progress bar styles that render with clean gaps between every cell even in GPU terminals like Ghostty (where full-block `█`/`░` glyphs merge seamlessly):
+    - `segments` (`▮▮▮▮▯▯`, new default — bright filled `▮` + muted track `▮` in color, `▯` in plain/mono)
+    - `squares` (`■■■■□□`, matches `agy-bar stats` heatmap squares)
+    - `pills` (`▰▰▰▰▱▱`, slanted capsules)
+    - `dots` (`●●●●○○`, circular dots)
+  - Existing `smooth`, `blocks`, `line`, and `ascii` styles remain available via `agy-bar config bar-style <style>`.
+
 ## [0.7.2] - 2026-11-26
 
 ### Changed

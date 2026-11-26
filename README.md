@@ -138,8 +138,8 @@ agy-bar config preset compact
 # Themes: auto | slate-dark | slate-light | ocean | nord | mono
 agy-bar config theme ocean
 
-# Gauge styles: smooth (███▍░░) | blocks (███░░░) | line (━━━───) | ascii ([###---])
-agy-bar config bar-style smooth
+# Gauge styles: segments (▮▮▮▯▯▯, default) | squares (■■■□□□) | pills (▰▰▰▱▱▱) | dots (●●●○○○) | smooth | blocks | line | ascii
+agy-bar config bar-style segments
 
 # Color mode: health (unified green->amber->red) | distinct (blue CTX vs green quota)
 agy-bar config set colorMode health

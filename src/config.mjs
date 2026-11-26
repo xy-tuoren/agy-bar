@@ -5,6 +5,10 @@ import { DEFAULT_PROXY_CONFIG, isDefaultProxyConfig, normalizeProxyConfig } from
 import { THEME_NAMES } from './themes.mjs';
 
 export const BAR_STYLES = Object.freeze({
+  segments: Object.freeze({ fill: '▮', empty: '▮', plainEmpty: '▯', wrap: ['', ''] }),
+  squares: Object.freeze({ fill: '■', empty: '■', plainEmpty: '□', wrap: ['', ''] }),
+  pills: Object.freeze({ fill: '▰', empty: '▱', wrap: ['', ''] }),
+  dots: Object.freeze({ fill: '●', empty: '○', wrap: ['', ''] }),
   smooth: Object.freeze({ fill: '█', empty: '░', partial: [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'], wrap: ['', ''] }),
   blocks: Object.freeze({ fill: '█', empty: '░', wrap: ['', ''] }),
   line: Object.freeze({ fill: '━', empty: '─', wrap: ['', ''] }),
@@ -112,7 +116,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   preset: 'dashboard',
   theme: 'auto',
   colorMode: 'health',
-  barStyle: 'smooth',
+  barStyle: 'segments',
   barWidth: 6,
   cacheTtlSec: 300,
   ledger: true,

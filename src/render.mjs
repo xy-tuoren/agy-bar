@@ -77,9 +77,10 @@ export function formatDurationShort(seconds) {
   return rm > 0 ? `${h}h${rm}m` : `${h}h`;
 }
 
-export function renderBar(ratio, { width = 6, style = 'smooth', fillColor, trackColor, color = true } = {}) {
-  const spec = BAR_STYLES[style] || BAR_STYLES.smooth;
+export function renderBar(ratio, { width = 6, style = 'segments', fillColor, trackColor, color = true } = {}) {
+  const spec = BAR_STYLES[style] || BAR_STYLES.segments;
   const clamped = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  const emptyGlyph = !color && spec.plainEmpty ? spec.plainEmpty : spec.empty;
 
   let body = '';
   if (spec.partial) {
@@ -90,13 +91,13 @@ export function renderBar(ratio, { width = 6, style = 'smooth', fillColor, track
     const emptyCount = Math.max(0, width - full - (partialChar ? 1 : 0));
     const filledStr = spec.fill.repeat(full) + partialChar;
     const filled = filledStr ? fg(filledStr, fillColor, color) : '';
-    const empty = emptyCount > 0 ? fg(spec.empty.repeat(emptyCount), trackColor, color) : '';
+    const empty = emptyCount > 0 ? fg(emptyGlyph.repeat(emptyCount), trackColor, color) : '';
     body = `${filled}${empty}`;
   } else {
     const filledCount = Math.round(clamped * width);
     const emptyCount = Math.max(0, width - filledCount);
     const filled = filledCount > 0 ? fg(spec.fill.repeat(filledCount), fillColor, color) : '';
-    const empty = emptyCount > 0 ? fg(spec.empty.repeat(emptyCount), trackColor, color) : '';
+    const empty = emptyCount > 0 ? fg(emptyGlyph.repeat(emptyCount), trackColor, color) : '';
     body = `${filled}${empty}`;
   }
 

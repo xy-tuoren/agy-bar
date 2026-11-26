@@ -24,7 +24,12 @@ test('formatTokens and formatReset produce concise readable labels', () => {
   assert.equal(formatReset({ reset_in_seconds: 273600 }), '3d4h');
 });
 
-test('renderBar supports smooth, blocks, line, and ascii styles', () => {
+test('renderBar supports segments, squares, pills, dots, smooth, blocks, line, and ascii styles', () => {
+  assert.equal(renderBar(0.5, { width: 6, style: 'segments', color: false }), '▮▮▮▯▯▯');
+  assert.equal(stripAnsi(renderBar(0.5, { width: 6, style: 'segments', fillColor: [52, 211, 153], trackColor: [60, 70, 80], color: true })), '▮▮▮▮▮▮');
+  assert.equal(renderBar(0.5, { width: 6, style: 'squares', color: false }), '■■■□□□');
+  assert.equal(renderBar(0.5, { width: 6, style: 'pills', color: false }), '▰▰▰▱▱▱');
+  assert.equal(renderBar(0.5, { width: 6, style: 'dots', color: false }), '●●●○○○');
   assert.equal(renderBar(0.5, { width: 6, style: 'blocks', color: false }), '███░░░');
   assert.equal(renderBar(0.5, { width: 6, style: 'line', color: false }), '━━━───');
   assert.equal(renderBar(0.5, { width: 6, style: 'ascii', color: false }), '[###---]');
@@ -40,14 +45,14 @@ test('health colorMode unifies healthy CTX bar color with right-side quota green
   });
   const metricsLine = healthOut.split('\n')[1];
   // slate-dark good green is 52;211;153; accent blue is 56;189;248.
-  assert.ok(metricsLine.includes('\x1b[38;2;52;211;153m███'));
-  assert.ok(!metricsLine.includes('\x1b[38;2;56;189;248m███'));
+  assert.ok(metricsLine.includes('\x1b[38;2;52;211;153m▮▮▮'));
+  assert.ok(!metricsLine.includes('\x1b[38;2;56;189;248m▮▮▮'));
 
   const distinctOut = renderStatusline(fixtures.geminiNormal, {
     config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', colorMode: 'distinct' }),
     color: true,
   });
-  assert.ok(distinctOut.split('\n')[1].includes('\x1b[38;2;56;189;248m███'));
+  assert.ok(distinctOut.split('\n')[1].includes('\x1b[38;2;56;189;248m▮▮▮'));
 });
 
 test('renders workspace dir + git, Vim badge, /compact danger hint, and optional cost/session metrics', () => {

@@ -105,7 +105,7 @@ const WIDTH_PX = 960;
 const darkNormal = renderStatusline(
   { ...SAMPLE_PAYLOADS.normal, terminal_width: COLS },
   {
-    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'smooth', colorMode: 'health' }),
+    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'segments', colorMode: 'health' }),
     color: true,
     git: { branch: 'main', dirty: false },
     telemetry: SAMPLE_TELEMETRY.normal,
@@ -116,7 +116,7 @@ const darkNormal = renderStatusline(
 const darkWarning = renderStatusline(
   { ...SAMPLE_PAYLOADS.warning, terminal_width: COLS },
   {
-    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'smooth', colorMode: 'health' }),
+    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'segments', colorMode: 'health' }),
     color: true,
     git: { branch: 'feat/statusline', dirty: true },
     telemetry: SAMPLE_TELEMETRY.warning,
@@ -127,7 +127,7 @@ const darkWarning = renderStatusline(
 const darkCritical = renderStatusline(
   { ...SAMPLE_PAYLOADS.critical, terminal_width: COLS },
   {
-    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'smooth', colorMode: 'health' }),
+    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark', barStyle: 'segments', colorMode: 'health' }),
     color: true,
     git: { branch: 'feat/statusline', dirty: true },
     telemetry: SAMPLE_TELEMETRY.critical,
@@ -138,7 +138,7 @@ const darkCritical = renderStatusline(
 const darkCompact = renderStatusline(
   { ...SAMPLE_PAYLOADS.claude, terminal_width: COLS },
   {
-    config: normalizeConfig({ preset: 'compact', theme: 'nord', barStyle: 'smooth', colorMode: 'health' }),
+    config: normalizeConfig({ preset: 'compact', theme: 'nord', barStyle: 'segments', colorMode: 'health' }),
     color: true,
     git: { branch: 'main', dirty: false },
     telemetry: SAMPLE_TELEMETRY.claude,
@@ -148,7 +148,7 @@ const darkCompact = renderStatusline(
 const lightNormal = renderStatusline(
   { ...SAMPLE_PAYLOADS.normal, terminal_width: COLS },
   {
-    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-light', barStyle: 'smooth', colorMode: 'health' }),
+    config: normalizeConfig({ preset: 'dashboard', theme: 'slate-light', barStyle: 'segments', colorMode: 'health' }),
     color: true,
     git: { branch: 'main', dirty: true },
     telemetry: SAMPLE_TELEMETRY.normal,
@@ -158,7 +158,7 @@ const lightNormal = renderStatusline(
 
 const darkCard = buildSection({
   title: 'agy-bar · Dark Themes (slate-dark & nord)',
-  subtitle: 'smooth 8-level gauges · unified health colors',
+  subtitle: 'segmented gauges · unified health colors',
   bg: '#0f172a',
   border: '#1e293b',
   titleFill: '#e2e8f0',
