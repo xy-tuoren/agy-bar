@@ -2,6 +2,13 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.4.0] - 2026-11-26
+
+### Added
+- **Time-To-First-Token (`TTFT`) display (`show.ttft`)**: Displays exact first-token latency alongside decode speed (`TTFT 1.9s·158t/s`), with configurable `ttftWarnSec` (default `8s`) and `ttftDangerSec` (default `15s`) color thresholds.
+- **Exact streaming decode speed & cache completion time (`src/step-timing.mjs`)**: On Node `>= 22.13`, reads only numeric step timing metadata from the local AGY conversation SQLite database in `readOnly: true` mode (never reads prompts or replies; opt-out via `config set dbTiming off`), cleanly separating TTFT wait time from pure streaming `tok/s` and restoring accurate 5-min cache countdowns even after `agy -c` restarts. Gracefully falls back to pure `stdin` timing on Node 20.
+- **`Avg TTFT` in `agy-bar stats` & live `TTFT` column in `agy-bar monitor`**.
+
 ## [0.3.0] - 2026-11-26
 
 ### Added

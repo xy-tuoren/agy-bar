@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { bold, fg } from './ansi.mjs';
 import { configDir } from './config.mjs';
 import { estimateCost, formatUsd } from './pricing.mjs';
-import { formatTokens, renderBar } from './render.mjs';
+import { formatTokens, formatTtft, renderBar } from './render.mjs';
 import { ledgerPath } from './telemetry.mjs';
 import { resolvePalette } from './themes.mjs';
 
@@ -70,6 +70,8 @@ export function aggregateStats(entries, { period = '7d', modelFilter = null, now
     costUsd: 0,
     cacheSavedUsd: 0,
     unpricedTurns: 0,
+    ttftSum: 0,
+    ttftCount: 0,
     speedSum: 0,
     speedCount: 0,
     quota5hStart: null,
@@ -99,6 +101,10 @@ export function aggregateStats(entries, { period = '7d', modelFilter = null, now
       totals.cacheSavedUsd += est.cacheSavedUsd;
     } else {
       totals.unpricedTurns += 1;
+    }
+    if (typeof e.ttftMs === 'number' && Number.isFinite(e.ttftMs) && e.ttftMs > 0) {
+      totals.ttftSum += e.ttftMs;
+      totals.ttftCount += 1;
     }
     if (typeof e.tokPerSec === 'number' && Number.isFinite(e.tokPerSec) && e.tokPerSec > 0) {
       totals.speedSum += e.tokPerSec;
@@ -185,6 +191,7 @@ export function aggregateStats(entries, { period = '7d', modelFilter = null, now
     cacheRead: totals.cacheRead,
     cacheWrite: totals.cacheWrite,
     cacheHitPct,
+    avgTtftMs: totals.ttftCount > 0 ? Math.round(totals.ttftSum / totals.ttftCount) : null,
     avgTokPerSec: totals.speedCount > 0 ? Math.round((totals.speedSum / totals.speedCount) * 10) / 10 : null,
     costUsd: totals.costUsd,
     cacheSavedUsd: totals.cacheSavedUsd,
@@ -230,12 +237,14 @@ export function formatStatsReport(report, { color = true, theme = 'auto' } = {})
   }
 
   const cacheText = report.cacheHitPct !== null ? `${report.cacheHitPct}%` : '--';
+  const ttftText = report.avgTtftMs !== null ? formatTtft(report.avgTtftMs) : '--';
   const speedText = report.avgTokPerSec !== null ? `${report.avgTokPerSec} tok/s` : '--';
   const costText = `${formatUsd(report.costUsd)}${report.cacheSavedUsd > 0 ? ` (saved ${formatUsd(report.cacheSavedUsd)} via cache)` : ''}`;
 
   lines.push(
     `${fg('Sessions:', p.muted, useColor)} ${fg(String(report.sessions), p.text, useColor)}  ` +
       `${fg('Turns:', p.muted, useColor)} ${fg(String(report.turns), p.text, useColor)}  ` +
+      `${fg('Avg TTFT:', p.muted, useColor)} ${fg(ttftText, p.text, useColor)}  ` +
       `${fg('Avg Speed:', p.muted, useColor)} ${fg(speedText, p.accent, useColor)}`,
   );
   lines.push(

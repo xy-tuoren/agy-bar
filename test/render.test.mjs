@@ -4,7 +4,7 @@ import test from 'node:test';
 import { stripAnsi, visibleWidth } from '../src/ansi.mjs';
 import { normalizeConfig } from '../src/config.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
-import { formatReset, formatTokens, renderBar, renderStatusline } from '../src/render.mjs';
+import { formatReset, formatTokens, formatTtft, renderBar, renderStatusline } from '../src/render.mjs';
 
 const fixtures = JSON.parse(
   readFileSync(new URL('./fixtures/payloads.json', import.meta.url), 'utf8'),
@@ -197,14 +197,17 @@ test('renders Gemini 4 Neon, 5-min cache TTL countdown, tok/s speed, context del
       modelThresholds: { neon: { warn: 35, danger: 50 } },
     }),
     color: true,
-    telemetry: { cacheRemainingSec: 25, speedTokPerSec: 148.4, contextDelta: 14200 },
+    telemetry: { cacheRemainingSec: 25, ttftMs: 1850, speedTokPerSec: 148.4, contextDelta: 14200 },
   });
   const plain = stripAnsi(out);
   assert.match(plain, /Gemini 4 Neon · medium/);
   assert.match(plain, /42\.6% \+14\.2K \(1\.0M\)/);
   assert.match(plain, /CACHE 88%·25s/);
-  assert.match(plain, /148t\/s/);
+  assert.match(plain, /TTFT 1\.9s·148t\/s/);
   assert.match(plain, /5h .*85%/);
+  assert.equal(formatTtft(680), '680ms');
+  assert.equal(formatTtft(6060), '6.1s');
+  assert.equal(formatTtft(16400), '16s');
   // Warning amber RGB for slate-dark (251;191;36) triggered on 42.6% due to neon warn=35 override,
   // and danger red RGB (248;113;113) triggered on 25s cache TTL.
   assert.ok(out.includes('\x1b[38;2;251;191;36m'));

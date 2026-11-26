@@ -196,3 +196,43 @@ test('armPayloadCapture and maybeCaptureRedactedPayload redact PII and disarm af
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('prefers exact DB stepTiming TTFT and streaming decode speed over wall-clock fallback', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-dbtiming-'));
+  try {
+    const t0 = 1_795_686_170_000;
+    const res = recordTelemetry(
+      {
+        conversation_id: 'b9d667f9-6d2b-4a0f-96ad-90b57a7d6f5a',
+        agent_state: 'idle',
+        model: { id: 'gemini-4-neon', display_name: 'Gemini 4 Neon', effort: 'xhigh' },
+        context_window: {
+          context_window_size: 1_048_576,
+          used_percentage: 26.5,
+          total_input_tokens: 280000,
+          total_output_tokens: 939,
+          current_usage: { input_tokens: 2400, output_tokens: 939, cache_read_input_tokens: 284000 },
+        },
+      },
+      {
+        now: t0,
+        baseDir: dir,
+        stepTiming: {
+          idx: 2572,
+          ttftMs: 10_100,
+          streamMs: 5_700,
+          totalMs: 15_800,
+          completedAtMs: t0 - 45_000,
+          outputTokens: 939,
+        },
+      },
+    );
+    assert.equal(res.ttftMs, 10_100);
+    // Pure streaming decode speed: 939 / 5.7 = 164.7 tok/s (not diluted by 10.1s TTFT!)
+    assert.equal(res.speedTokPerSec, 164.7);
+    // Cache TTL uses exact DB completedAtMs (300 - 45 = 255s remaining)
+    assert.equal(res.cacheRemainingSec, 255);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

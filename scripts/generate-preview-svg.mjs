@@ -99,8 +99,8 @@ function buildSection({ title, subtitle, bg, border, titleFill, subFill, default
   return { svg: elems.join('\n  '), height: cardH };
 }
 
-const COLS = 110;
-const WIDTH_PX = 940;
+const COLS = 116;
+const WIDTH_PX = 960;
 
 const darkNormal = renderStatusline(
   { ...SAMPLE_PAYLOADS.normal, terminal_width: COLS },

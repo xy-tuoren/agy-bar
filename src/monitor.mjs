@@ -1,6 +1,6 @@
 import { bold, fg } from './ansi.mjs';
 import { loadConfig } from './config.mjs';
-import { formatReset, renderBar } from './render.mjs';
+import { formatReset, formatTtft, renderBar } from './render.mjs';
 import { listSessions } from './telemetry.mjs';
 import { resolvePalette } from './themes.mjs';
 
@@ -70,7 +70,7 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
 
   lines.push(
     fg(
-      `${padRight('State', 10)} ${padRight('Workspace / Branch', 24)} ${padRight('Model', 18)} ${padRight('Context', 15)} ${padRight('Cache / TTL', 14)} ${padLeft('Speed', 8)}`,
+      `${padRight('State', 10)} ${padRight('Workspace / Branch', 22)} ${padRight('Model', 17)} ${padRight('Context', 14)} ${padRight('Cache / TTL', 13)} ${padLeft('TTFT', 6)} ${padLeft('Speed', 7)}`,
       p.muted,
       useColor,
     ),
@@ -81,8 +81,8 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
     const stateLabel = padRight(s.agentState || 'idle', 8);
     const ws = s.workspaceName || s.sessionId.slice(0, 10);
     const branchPart = s.branch ? `:${s.branch}${s.dirty ? '*' : ''}` : '';
-    const wsCell = padRight(`${ws}${branchPart}`, 24);
-    const modelCell = padRight(s.model || '--', 18);
+    const wsCell = padRight(`${ws}${branchPart}`, 22);
+    const modelCell = padRight(s.model || '--', 17);
 
     const pct = typeof s.usedPct === 'number' ? s.usedPct : null;
     const ctxTone =
@@ -98,16 +98,18 @@ export function renderMonitorFrame(sessions, { now = Date.now(), config = loadCo
 
     const cachePct = typeof s.cacheHitPct === 'number' ? `${Math.round(s.cacheHitPct)}%` : '--';
     const ttl = formatTtl(s.lastActivityAt, config.cacheTtlSec, now);
-    const cacheCell = padRight(`${cachePct} · ${ttl}`, 14);
-    const speedCell = padLeft(typeof s.lastSpeedTokPerSec === 'number' ? `${Math.round(s.lastSpeedTokPerSec)}t/s` : '--', 8);
+    const cacheCell = padRight(`${cachePct}·${ttl}`, 13);
+    const ttftCell = padLeft(typeof s.lastTtftMs === 'number' && s.lastTtftMs > 0 ? formatTtft(s.lastTtftMs) : '--', 6);
+    const speedCell = padLeft(typeof s.lastSpeedTokPerSec === 'number' ? `${Math.round(s.lastSpeedTokPerSec)}t/s` : '--', 7);
 
     lines.push(
       `${dot} ${fg(stateLabel, s.isBusy ? p.warn : p.text, useColor)} ` +
         `${fg(wsCell, p.branch, useColor)} ` +
         `${fg(modelCell, p.text, useColor)} ` +
-        `${ctxBar} ${fg(ctxText, ctxTone, useColor)}    ` +
+        `${ctxBar} ${fg(ctxText, ctxTone, useColor)}   ` +
         `${fg(cacheCell, ttl === 'exp' ? p.danger : p.muted, useColor)} ` +
-        `${fg(speedCell, p.accent, useColor)}  ${fg(formatAge(s.ageMs), p.muted, useColor)}`,
+        `${fg(ttftCell, p.text, useColor)} ` +
+        `${fg(speedCell, p.accent, useColor)} ${fg(formatAge(s.ageMs), p.muted, useColor)}`,
     );
   }
 

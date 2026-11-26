@@ -23,7 +23,8 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>
 | Switch color theme | `... config theme auto \| slate-dark \| slate-light \| ocean \| nord \| mono` |
 | Switch bar style | `... config bar-style smooth \| blocks \| line \| ascii` |
 | Switch gauge color mode | `... config set colorMode health \| distinct` |
-| Show / hide elements | `... config enable cost session contextDelta` / `... config disable dir compactHint speed` |
+| Show / hide elements | `... config enable cost session contextDelta` / `... config disable dir ttft speed` |
+| Tune alerts or timing | `... config set ttftWarnSec 8 ttftDangerSec 15 dbTiming on` |
 | Per-model context alerts | `... config set modelThreshold.claude.warn 65 modelThreshold.claude.danger 85` |
 | Usage & cost report | `... stats today \| 7d \| 30d \| all [--model claude]` |
 | Multi-CLI live monitor | `... monitor [--once]` |
@@ -32,7 +33,7 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>
 
 ## Toggleable Items
 
-`hint`, `vim`, `dir`, `model`, `effort`, `git`, `gitDirty`, `context`, `contextBar`, `contextDelta`, `compactHint`, `capacity`, `cache`, `cacheTtl`, `speed`, `cost`, `session`, `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset`
+`hint`, `vim`, `dir`, `model`, `effort`, `git`, `gitDirty`, `context`, `contextBar`, `contextDelta`, `compactHint`, `capacity`, `cache`, `cacheTtl`, `ttft`, `speed`, `cost`, `session`, `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset`
 
 ## Workflow
 

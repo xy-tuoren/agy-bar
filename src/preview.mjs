@@ -108,7 +108,8 @@ export const SAMPLE_PAYLOADS = Object.freeze({
 export const SAMPLE_TELEMETRY = Object.freeze({
   normal: Object.freeze({
     cacheRemainingSec: 222,
-    speedTokPerSec: 142,
+    ttftMs: 1850,
+    speedTokPerSec: 158,
     contextDelta: 12400,
     sessionCostUsd: 0.18,
     sessionTurns: 6,
@@ -116,7 +117,8 @@ export const SAMPLE_TELEMETRY = Object.freeze({
   }),
   warning: Object.freeze({
     cacheRemainingSec: 68,
-    speedTokPerSec: 96,
+    ttftMs: 8400,
+    speedTokPerSec: 112,
     contextDelta: 34800,
     sessionCostUsd: 0.84,
     sessionTurns: 14,
@@ -124,7 +126,8 @@ export const SAMPLE_TELEMETRY = Object.freeze({
   }),
   critical: Object.freeze({
     cacheRemainingSec: 18,
-    speedTokPerSec: 54,
+    ttftMs: 16200,
+    speedTokPerSec: 64,
     contextDelta: 61200,
     sessionCostUsd: 2.35,
     sessionTurns: 28,
@@ -132,7 +135,8 @@ export const SAMPLE_TELEMETRY = Object.freeze({
   }),
   claude: Object.freeze({
     cacheRemainingSec: 255,
-    speedTokPerSec: 118,
+    ttftMs: 2100,
+    speedTokPerSec: 126,
     contextDelta: 8900,
     sessionCostUsd: 0.42,
     sessionTurns: 9,

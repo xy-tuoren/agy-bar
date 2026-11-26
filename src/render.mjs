@@ -54,6 +54,18 @@ export function formatCacheTtl(seconds) {
   return `${m}m${String(s).padStart(2, '0')}s`;
 }
 
+export function formatTtft(ms) {
+  const value = nonNegNumber(ms);
+  if (value === null || value === 0) return '';
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const sec = value / 1000;
+  if (sec < 10) return `${sec.toFixed(1)}s`;
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return s > 0 ? `${m}m${s}s` : `${m}m`;
+}
+
 export function formatDurationShort(seconds) {
   const sec = nonNegNumber(seconds);
   if (sec === null) return '';
@@ -304,13 +316,35 @@ function buildCacheSegment(context, opts, config, palette, color, telemetry) {
   return seg;
 }
 
-function buildSpeedSegment(opts, config, palette, color, telemetry) {
-  if (!opts.withSpeed || !config.show.speed) return '';
-  const rate = nonNegNumber(telemetry?.speedTokPerSec);
-  if (rate === null || rate <= 0) return '';
-  const label = `${Math.round(rate)}t/s`;
-  const tone = rate >= 60 ? palette.accent : rate >= 25 ? palette.text : palette.warn;
-  return fg(label, tone, color);
+function buildPerfSegment(opts, config, palette, color, telemetry) {
+  const parts = [];
+  if (opts.withTtft && config.show.ttft) {
+    const ttftMs = nonNegNumber(telemetry?.ttftMs);
+    if (ttftMs !== null && ttftMs > 0) {
+      const ttftSec = ttftMs / 1000;
+      const ttftText = formatTtft(ttftMs);
+      const tone =
+        ttftSec >= config.ttftDangerSec
+          ? palette.danger
+          : ttftSec >= config.ttftWarnSec
+            ? palette.warn
+            : ttftSec <= 3
+              ? palette.good
+              : palette.text;
+      const prefix = opts.shortPerf ? '' : `${fg('TTFT', palette.muted, color)} `;
+      const val = ttftSec >= config.ttftWarnSec ? bold(fg(ttftText, tone, color), color) : fg(ttftText, tone, color);
+      parts.push(`${prefix}${val}`);
+    }
+  }
+  if (opts.withSpeed && config.show.speed) {
+    const rate = nonNegNumber(telemetry?.speedTokPerSec);
+    if (rate !== null && rate > 0) {
+      const label = `${Math.round(rate)}t/s`;
+      const tone = rate >= 60 ? palette.accent : rate >= 25 ? palette.text : palette.warn;
+      parts.push(fg(label, tone, color));
+    }
+  }
+  return joinWithSep(parts, '·', palette, color);
 }
 
 function buildCostSegment(opts, config, palette, color, telemetry) {
@@ -377,16 +411,17 @@ function renderMetricsRow(payload, width, config, palette, color, now, { include
   const sep = ' │ ';
 
   const stages = [
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: true, withCost: true, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: true, withCost: false, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: false, withCost: true, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: false, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
   ];
 
   let chosenLeft = '';
@@ -408,8 +443,8 @@ function renderMetricsRow(payload, width, config, palette, color, now, { include
     if (ctxSeg) leftParts.push(ctxSeg);
     const cacheSeg = buildCacheSegment(context, stage, config, palette, color, telemetry);
     if (cacheSeg) leftParts.push(cacheSeg);
-    const speedSeg = buildSpeedSegment(stage, config, palette, color, telemetry);
-    if (speedSeg) leftParts.push(speedSeg);
+    const perfSeg = buildPerfSegment(stage, config, palette, color, telemetry);
+    if (perfSeg) leftParts.push(perfSeg);
     const costSeg = buildCostSegment(stage, config, palette, color, telemetry);
     if (costSeg) leftParts.push(costSeg);
     const sessionSeg = buildSessionSegment(stage, config, palette, color, telemetry);

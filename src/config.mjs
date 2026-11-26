@@ -29,6 +29,7 @@ export const PRESETS = Object.freeze({
     capacity: true,
     cache: true,
     cacheTtl: true,
+    ttft: true,
     speed: true,
     cost: false,
     session: false,
@@ -53,6 +54,7 @@ export const PRESETS = Object.freeze({
     capacity: false,
     cache: false,
     cacheTtl: false,
+    ttft: false,
     speed: false,
     cost: false,
     session: false,
@@ -77,6 +79,7 @@ export const PRESETS = Object.freeze({
     capacity: true,
     cache: false,
     cacheTtl: false,
+    ttft: false,
     speed: false,
     cost: false,
     session: false,
@@ -99,10 +102,13 @@ export const DEFAULT_CONFIG = Object.freeze({
   barWidth: 6,
   cacheTtlSec: 300,
   ledger: true,
+  dbTiming: true,
   contextWarn: 70,
   contextDanger: 88,
   quotaWarn: 25,
   quotaDanger: 10,
+  ttftWarnSec: 8,
+  ttftDangerSec: 15,
   modelThresholds: Object.freeze({}),
   show: PRESETS.dashboard,
 });
@@ -139,6 +145,11 @@ const SHOW_ALIASES = Object.freeze({
   'cache-ttl': 'cacheTtl',
   cache_ttl: 'cacheTtl',
   ttl: 'cacheTtl',
+  ttft: 'ttft',
+  firsttoken: 'ttft',
+  'first-token': 'ttft',
+  first_token: 'ttft',
+  latency: 'ttft',
   speed: 'speed',
   tps: 'speed',
   toks: 'speed',
@@ -209,10 +220,13 @@ export function normalizeConfig(raw) {
   const barWidth = clampInt(input.barWidth, 4, 14, DEFAULT_CONFIG.barWidth);
   const cacheTtlSec = clampInt(input.cacheTtlSec, 30, 3600, DEFAULT_CONFIG.cacheTtlSec);
   const ledger = typeof input.ledger === 'boolean' ? input.ledger : DEFAULT_CONFIG.ledger;
+  const dbTiming = typeof input.dbTiming === 'boolean' ? input.dbTiming : DEFAULT_CONFIG.dbTiming;
   const contextWarn = clampInt(input.contextWarn, 10, 95, DEFAULT_CONFIG.contextWarn);
   const contextDanger = clampInt(input.contextDanger, contextWarn, 99, DEFAULT_CONFIG.contextDanger);
   const quotaDanger = clampInt(input.quotaDanger, 1, 50, DEFAULT_CONFIG.quotaDanger);
   const quotaWarn = clampInt(input.quotaWarn, quotaDanger, 80, DEFAULT_CONFIG.quotaWarn);
+  const ttftWarnSec = clampInt(input.ttftWarnSec, 1, 120, DEFAULT_CONFIG.ttftWarnSec);
+  const ttftDangerSec = clampInt(input.ttftDangerSec, ttftWarnSec, 300, DEFAULT_CONFIG.ttftDangerSec);
   const modelThresholds = normalizeModelThresholds(input.modelThresholds, contextWarn, contextDanger);
 
   const show = { ...PRESETS[preset] };
@@ -232,10 +246,13 @@ export function normalizeConfig(raw) {
     barWidth,
     cacheTtlSec,
     ledger,
+    dbTiming,
     contextWarn,
     contextDanger,
     quotaWarn,
     quotaDanger,
+    ttftWarnSec,
+    ttftDangerSec,
     modelThresholds,
     show,
   };
@@ -261,10 +278,13 @@ export function serializeConfig(cfg) {
   if (normalized.colorMode !== DEFAULT_CONFIG.colorMode) out.colorMode = normalized.colorMode;
   if (normalized.cacheTtlSec !== DEFAULT_CONFIG.cacheTtlSec) out.cacheTtlSec = normalized.cacheTtlSec;
   if (normalized.ledger !== DEFAULT_CONFIG.ledger) out.ledger = normalized.ledger;
+  if (normalized.dbTiming !== DEFAULT_CONFIG.dbTiming) out.dbTiming = normalized.dbTiming;
   if (normalized.contextWarn !== DEFAULT_CONFIG.contextWarn) out.contextWarn = normalized.contextWarn;
   if (normalized.contextDanger !== DEFAULT_CONFIG.contextDanger) out.contextDanger = normalized.contextDanger;
   if (normalized.quotaWarn !== DEFAULT_CONFIG.quotaWarn) out.quotaWarn = normalized.quotaWarn;
   if (normalized.quotaDanger !== DEFAULT_CONFIG.quotaDanger) out.quotaDanger = normalized.quotaDanger;
+  if (normalized.ttftWarnSec !== DEFAULT_CONFIG.ttftWarnSec) out.ttftWarnSec = normalized.ttftWarnSec;
+  if (normalized.ttftDangerSec !== DEFAULT_CONFIG.ttftDangerSec) out.ttftDangerSec = normalized.ttftDangerSec;
   if (Object.keys(normalized.modelThresholds).length > 0) out.modelThresholds = normalized.modelThresholds;
   const overrides = computeShowOverrides(normalized.preset, normalized.show);
   if (Object.keys(overrides).length > 0) out.show = overrides;
@@ -377,6 +397,10 @@ export function applyConfigCommand(args = [], path = configPath()) {
         const parsed = parseToggle(value);
         if (parsed === null) throw new Error('ledger must be on/off (or true/false).');
         next.ledger = parsed;
+      } else if (['dbtiming', 'db-timing', 'db_timing'].includes(lower)) {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('dbTiming must be on/off (or true/false).');
+        next.dbTiming = parsed;
       } else if (['contextwarn', 'context-warn'].includes(lower)) {
         next.contextWarn = Number(value);
       } else if (['contextdanger', 'context-danger'].includes(lower)) {
@@ -385,6 +409,10 @@ export function applyConfigCommand(args = [], path = configPath()) {
         next.quotaWarn = Number(value);
       } else if (['quotadanger', 'quota-danger'].includes(lower)) {
         next.quotaDanger = Number(value);
+      } else if (['ttftwarnsec', 'ttft-warn-sec', 'ttft_warn_sec'].includes(lower)) {
+        next.ttftWarnSec = Number(value);
+      } else if (['ttftdangersec', 'ttft-danger-sec', 'ttft_danger_sec'].includes(lower)) {
+        next.ttftDangerSec = Number(value);
       } else if (lower.startsWith('modelthreshold.') || lower.startsWith('modelthresholds.')) {
         const parts = lower.split('.');
         if (parts.length !== 3 || !['warn', 'danger'].includes(parts[2])) {

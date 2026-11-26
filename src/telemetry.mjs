@@ -149,6 +149,7 @@ export function recordTelemetry(
   {
     now = Date.now(),
     git = null,
+    stepTiming = null,
     baseDir = configDir(homedir()),
     cacheTtlSec = 300,
     enableLedger = true,
@@ -175,8 +176,10 @@ export function recordTelemetry(
   const wasBusy = Boolean(prev?.isBusy);
 
   let turnStartedAt = prev?.turnStartedAt ?? null;
+  let turnFirstTokenAt = prev?.turnFirstTokenAt ?? null;
   if (isBusy && (!wasBusy || turnStartedAt === null)) {
     turnStartedAt = now;
+    turnFirstTokenAt = null;
   }
 
   const prevTotalOut = nonNeg(prev?.totalOut);
@@ -204,32 +207,70 @@ export function recordTelemetry(
   let sessionCacheSavedUsd = nonNeg(prev?.sessionCacheSavedUsd) ?? 0;
 
   let lastActivityAt = nonNeg(prev?.lastActivityAt);
+  let lastTtftMs = nonNeg(prev?.lastTtftMs);
   let lastSpeedTokPerSec = nonNeg(prev?.lastSpeedTokPerSec);
   let lastTurnDurationMs = nonNeg(prev?.lastTurnDurationMs);
   let lastContextDelta = typeof prev?.lastContextDelta === 'number' && Number.isFinite(prev.lastContextDelta) ? prev.lastContextDelta : null;
 
-  if (outDelta > 0 || inDelta > 0 || usageChanged) {
-    lastActivityAt = now;
-  } else if (lastActivityAt === null && usage !== null && (curIn > 0 || curCacheRead > 0)) {
-    lastActivityAt = now;
+  let hasDbCompletedAt = false;
+  // Prefer exact step-level timestamps from local AGY read-only step metadata when available.
+  if (stepTiming && typeof stepTiming === 'object') {
+    const dbTtft = nonNeg(stepTiming.ttftMs);
+    if (dbTtft !== null && dbTtft <= 600_000) {
+      lastTtftMs = dbTtft;
+    }
+    const dbCompleted = nonNeg(stepTiming.completedAtMs);
+    if (dbCompleted !== null) {
+      lastActivityAt = dbCompleted;
+      hasDbCompletedAt = true;
+    }
+    const dbStreamMs = nonNeg(stepTiming.streamMs);
+    const dbOut = nonNeg(stepTiming.outputTokens);
+    if (dbOut !== null && dbOut > 0 && dbStreamMs !== null && dbStreamMs >= 150) {
+      const decodeRate = dbOut / (dbStreamMs / 1000);
+      if (decodeRate > 0 && decodeRate < 5000) {
+        lastSpeedTokPerSec = Math.round(decodeRate * 10) / 10;
+        lastTurnDurationMs = nonNeg(stepTiming.totalMs) ?? dbStreamMs;
+      }
+    }
+  }
+
+  if (!hasDbCompletedAt) {
+    if (outDelta > 0 || inDelta > 0 || usageChanged) {
+      lastActivityAt = now;
+    } else if (lastActivityAt === null && usage !== null && (curIn > 0 || curCacheRead > 0)) {
+      lastActivityAt = now;
+    }
   }
 
   const modelName = normalizeModelName(p.model);
 
   if (outDelta > 0) {
     sessionTurns += 1;
-    let durationMs = null;
-    if (turnStartedAt !== null && now > turnStartedAt && now - turnStartedAt <= 600_000) {
-      durationMs = now - turnStartedAt;
-    } else if (prev?.updatedAt && now > prev.updatedAt && now - prev.updatedAt <= 120_000) {
-      durationMs = now - prev.updatedAt;
+
+    // Fallback stdin-based TTFT when DB timing is unavailable.
+    if (turnStartedAt !== null && turnFirstTokenAt === null && now >= turnStartedAt) {
+      turnFirstTokenAt = now;
+      if (stepTiming?.ttftMs == null && now - turnStartedAt <= 600_000) {
+        lastTtftMs = now - turnStartedAt;
+      }
     }
 
-    if (durationMs !== null && durationMs >= 100) {
-      const rate = outDelta / (durationMs / 1000);
-      if (rate > 0 && rate < 5000) {
-        lastSpeedTokPerSec = Math.round(rate * 10) / 10;
-        lastTurnDurationMs = durationMs;
+    // Fallback stdin-based speed when DB streaming duration is unavailable.
+    if (!(stepTiming?.outputTokens > 0 && stepTiming?.streamMs >= 150)) {
+      let durationMs = null;
+      if (turnStartedAt !== null && now > turnStartedAt && now - turnStartedAt <= 600_000) {
+        durationMs = now - turnStartedAt;
+      } else if (prev?.updatedAt && now > prev.updatedAt && now - prev.updatedAt <= 120_000) {
+        durationMs = now - prev.updatedAt;
+      }
+
+      if (durationMs !== null && durationMs >= 100) {
+        const rate = outDelta / (durationMs / 1000);
+        if (rate > 0 && rate < 5000) {
+          lastSpeedTokPerSec = Math.round(rate * 10) / 10;
+          lastTurnDurationMs = durationMs;
+        }
       }
     }
 
@@ -265,6 +306,7 @@ export function recordTelemetry(
           output: outDelta,
           cacheRead: curCacheRead,
           cacheWrite: curCacheWrite,
+          ttftMs: lastTtftMs,
           durationMs: lastTurnDurationMs,
           tokPerSec: lastSpeedTokPerSec,
           quota5h: nonNeg(p.quota?.['gemini-5h']?.remaining_fraction ?? p.quota?.['3p-5h']?.remaining_fraction),
@@ -283,6 +325,7 @@ export function recordTelemetry(
 
   if (!isBusy) {
     turnStartedAt = null;
+    turnFirstTokenAt = null;
   }
 
   const cwd = p.workspace?.current_dir || p.cwd || prev?.cwd || null;
@@ -309,7 +352,9 @@ export function recordTelemetry(
     cacheHitPct: curIn + curCacheRead > 0 ? Math.round((curCacheRead / (curIn + curCacheRead)) * 1000) / 10 : prev?.cacheHitPct ?? null,
     usageSignature,
     turnStartedAt,
+    turnFirstTokenAt,
     lastActivityAt,
+    lastTtftMs,
     lastSpeedTokPerSec,
     lastTurnDurationMs,
     lastContextDelta,
@@ -330,6 +375,7 @@ export function recordTelemetry(
     sessionId,
     cacheRemainingSec,
     cacheExpired: cacheRemainingSec === 0 && lastActivityAt !== null,
+    ttftMs: lastTtftMs,
     speedTokPerSec: lastSpeedTokPerSec,
     turnDurationMs: lastTurnDurationMs,
     contextDelta: lastContextDelta,
