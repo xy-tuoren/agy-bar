@@ -33,7 +33,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     });
 
     let usageSummary = null;
-    if (config.show.todayTokens || config.show.totalTokens) {
+    if (config.show.todayTokens || config.show.weekTokens || config.show.monthTokens || config.show.totalTokens) {
       usageSummary = await getOrRefreshUsageSummary({
         deltaTokens: telemetry.turnTokensDelta || 0,
         allowScan: config.dbTiming,

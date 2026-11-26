@@ -2,6 +2,11 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.6.2] - 2026-11-26
+
+### Added
+- **Weekly (`WK`) & Monthly (`MO`) Token Totals in Bottom Statusbar (`show.weekTokens`, `show.monthTokens`)**: Extends line 1's minimal token strip to `DAY · WK · MO · ALL`, color-matched to `agy-bar stats`, with graceful progressive shedding (`DAY·WK·MO·ALL` → `DAY·WK·ALL` → `DAY·ALL` → `DAY` → hidden) on narrower terminals.
+
 ## [0.6.1] - 2026-11-26
 
 ### Added

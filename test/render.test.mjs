@@ -80,20 +80,33 @@ test('renders workspace dir + git, Vim badge, /compact danger hint, and optional
   assert.match(line2, /12m·8t/);
 });
 
-test('renders minimal DAY and ALL token totals on line 1 and sheds cleanly on narrow terminals', () => {
-  const usageSummary = { todayTokens: 133_600_000, totalTokens: 903_900_000 };
+test('renders minimal DAY, WK, MO, and ALL token totals on line 1 and sheds cleanly on narrow terminals', () => {
+  const usageSummary = {
+    todayTokens: 136_000_000,
+    weekTokens: 810_000_000,
+    monthTokens: 874_800_000,
+    totalTokens: 906_200_000,
+  };
   const wide = renderStatusline(
-    { ...fixtures.geminiNormal, terminal_width: 120, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { ...fixtures.geminiNormal, terminal_width: 140, workspace: { current_dir: '/Users/dev/agy-bar' } },
     { color: false, git: { branch: 'main', dirty: false }, usageSummary },
   ).split('\n')[0];
-  assert.match(wide, /DAY 133\.6M · ALL 903\.9M │ Gemini 4 Carbon · high$/);
+  assert.match(wide, /DAY 136\.0M · WK 810\.0M · MO 874\.8M · ALL 906\.2M │ Gemini 4 Carbon · high$/);
+
+  const medium = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 96, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { color: false, git: { branch: 'main', dirty: false }, usageSummary },
+  ).split('\n')[0];
+  assert.ok(visibleWidth(medium) <= 94);
+  assert.match(medium, /DAY 136\.0M/);
+  assert.ok(!medium.includes('MO 874.8M'));
 
   const narrow = renderStatusline(
     { ...fixtures.geminiNormal, terminal_width: 52, workspace: { current_dir: '/Users/dev/agy-bar' } },
     { color: false, git: { branch: 'main', dirty: false }, usageSummary },
   ).split('\n')[0];
   assert.ok(visibleWidth(narrow) <= 50);
-  assert.ok(!narrow.includes('ALL 903.9M'));
+  assert.ok(!narrow.includes('ALL 906.2M'));
 });
 
 test('dashboard preset renders 2 lines with git, context bar, cache, and Gemini quota', () => {

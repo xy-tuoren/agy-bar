@@ -145,8 +145,10 @@ export const SAMPLE_TELEMETRY = Object.freeze({
 });
 
 export const SAMPLE_USAGE_SUMMARY = Object.freeze({
-  todayTokens: 133_600_000,
-  totalTokens: 903_900_000,
+  todayTokens: 136_000_000,
+  weekTokens: 810_000_000,
+  monthTokens: 874_800_000,
+  totalTokens: 906_200_000,
 });
 
 export function buildPreviewOutput({

@@ -82,13 +82,16 @@ test('getOrRefreshUsageSummary returns cached totals and increments live deltas 
     const now = new Date('2026-11-26T12:00:00Z').getTime();
     const initial = computeUsageSummary(
       [
+        { ts: now - 10 * 86_400_000, input: 200_000, output: 20_000, cacheRead: 780_000 },
         { ts: now - 3 * 86_400_000, input: 100_000, output: 10_000, cacheRead: 900_000 },
         { ts: now - 1000, input: 50_000, output: 5_000, cacheRead: 450_000 },
       ],
       { now },
     );
     assert.equal(initial.todayTokens, 505_000);
-    assert.equal(initial.totalTokens, 1_515_000);
+    assert.equal(initial.weekTokens, 1_515_000);
+    assert.equal(initial.monthTokens, 2_515_000);
+    assert.equal(initial.totalTokens, 2_515_000);
     saveUsageSummary(initial, { baseDir: dir });
 
     const bumped = await getOrRefreshUsageSummary({
@@ -98,7 +101,9 @@ test('getOrRefreshUsageSummary returns cached totals and increments live deltas 
       allowScan: false,
     });
     assert.equal(bumped.todayTokens, 605_000);
-    assert.equal(bumped.totalTokens, 1_615_000);
+    assert.equal(bumped.weekTokens, 1_615_000);
+    assert.equal(bumped.monthTokens, 2_615_000);
+    assert.equal(bumped.totalTokens, 2_615_000);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

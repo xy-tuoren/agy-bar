@@ -124,21 +124,33 @@ function localDateKey(ts) {
 }
 
 export function computeUsageSummary(entries, { now = Date.now() } = {}) {
+  const nowDate = new Date(now);
   const todayKey = localDateKey(now);
+  const todayStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+  const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
+  const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
+
   let todayTokens = 0;
+  let weekTokens = 0;
+  let monthTokens = 0;
   let totalTokens = 0;
+
   for (const e of entries || []) {
     const tok = (Number(e.input) || 0) + (Number(e.output) || 0) + (Number(e.cacheRead) || 0) + (Number(e.cacheWrite) || 0);
     if (tok <= 0) continue;
     totalTokens += tok;
-    if (typeof e.ts === 'number' && localDateKey(e.ts) === todayKey) {
-      todayTokens += tok;
+    if (typeof e.ts === 'number') {
+      if (localDateKey(e.ts) === todayKey) todayTokens += tok;
+      if (e.ts >= weekStart) weekTokens += tok;
+      if (e.ts >= monthStart) monthTokens += tok;
     }
   }
   return {
     updatedAt: now,
     date: todayKey,
     todayTokens,
+    weekTokens,
+    monthTokens,
     totalTokens,
   };
 }
@@ -148,11 +160,17 @@ export function readUsageSummary({ baseDir = configDir(homedir()) } = {}) {
   try {
     if (!existsSync(path)) return null;
     const parsed = JSON.parse(readFileSync(path, 'utf8'));
-    if (parsed && typeof parsed.totalTokens === 'number' && typeof parsed.todayTokens === 'number') {
+    if (
+      parsed &&
+      typeof parsed.totalTokens === 'number' &&
+      typeof parsed.todayTokens === 'number' &&
+      typeof parsed.weekTokens === 'number' &&
+      typeof parsed.monthTokens === 'number'
+    ) {
       return parsed;
     }
   } catch {
-    // Ignore corrupt summary snapshot.
+    // Ignore corrupt or legacy summary snapshot so it refreshes cleanly.
   }
   return null;
 }
@@ -185,6 +203,8 @@ export async function getOrRefreshUsageSummary({
       const bumped = {
         ...existing,
         todayTokens: existing.todayTokens + deltaTokens,
+        weekTokens: existing.weekTokens + deltaTokens,
+        monthTokens: existing.monthTokens + deltaTokens,
         totalTokens: existing.totalTokens + deltaTokens,
       };
       return saveUsageSummary(bumped, { baseDir });
@@ -209,6 +229,8 @@ export async function getOrRefreshUsageSummary({
     const rolled = existing.date === todayKey ? existing : { ...existing, date: todayKey, todayTokens: 0, updatedAt: now };
     if (deltaTokens > 0) {
       rolled.todayTokens += deltaTokens;
+      rolled.weekTokens += deltaTokens;
+      rolled.monthTokens += deltaTokens;
       rolled.totalTokens += deltaTokens;
     }
     return saveUsageSummary(rolled, { baseDir });

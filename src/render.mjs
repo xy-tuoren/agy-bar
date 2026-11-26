@@ -216,13 +216,27 @@ function formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir
   return '';
 }
 
-function formatUsageSummarySegment(usageSummary, show, palette, color, { withTotal = true } = {}) {
+function formatUsageSummarySegment(
+  usageSummary,
+  show,
+  palette,
+  color,
+  { withWeek = true, withMonth = true, withTotal = true } = {},
+) {
   if (!usageSummary || typeof usageSummary !== 'object') return '';
   const parts = [];
   const today = nonNegNumber(usageSummary.todayTokens);
+  const week = nonNegNumber(usageSummary.weekTokens);
+  const month = nonNegNumber(usageSummary.monthTokens);
   const total = nonNegNumber(usageSummary.totalTokens);
   if (show.todayTokens && today !== null && today > 0) {
     parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatTokens(today), palette.accent, color)}`);
+  }
+  if (withWeek && show.weekTokens && week !== null && week > 0) {
+    parts.push(`${fg('WK', palette.muted, color)} ${fg(formatTokens(week), palette.text, color)}`);
+  }
+  if (withMonth && show.monthTokens && month !== null && month > 0) {
+    parts.push(`${fg('MO', palette.muted, color)} ${fg(formatTokens(month), palette.good, color)}`);
   }
   if (withTotal && show.totalTokens && total !== null && total > 0) {
     parts.push(`${fg('ALL', palette.muted, color)} ${fg(formatTokens(total), palette.branch, color)}`);
@@ -238,10 +252,14 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
   const modelText = show.model ? formatModelName(payload?.model, show.effort) : '';
   const modelSeg = modelText ? fg(modelText, palette.muted, color) : '';
 
-  const usageFull = formatUsageSummarySegment(usageSummary, show, palette, color, { withTotal: true });
-  const usageDayOnly = formatUsageSummarySegment(usageSummary, show, palette, color, { withTotal: false });
+  const usageFull = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: true, withMonth: true, withTotal: true });
+  const usageNoMo = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: true, withMonth: false, withTotal: true });
+  const usageDayAll = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: true });
+  const usageDayOnly = formatUsageSummarySegment(usageSummary, show, palette, color, { withWeek: false, withMonth: false, withTotal: false });
 
   const rightFull = joinWithSep([usageFull, modelSeg], ' │ ', palette, color);
+  const rightNoMo = joinWithSep([usageNoMo, modelSeg], ' │ ', palette, color);
+  const rightDayAll = joinWithSep([usageDayAll, modelSeg], ' │ ', palette, color);
   const rightDayOnly = joinWithSep([usageDayOnly, modelSeg], ' │ ', palette, color);
   const rightModelOnly = modelSeg;
 
@@ -258,6 +276,10 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
   const pairs = [
     [leftFull, rightFull],
     [leftShort, rightFull],
+    [leftFull, rightNoMo],
+    [leftShort, rightNoMo],
+    [leftFull, rightDayAll],
+    [leftShort, rightDayAll],
     [leftFull, rightDayOnly],
     [leftShort, rightDayOnly],
     [leftFull, rightModelOnly],
@@ -540,7 +562,17 @@ export function renderStatusline(
   }
 
   const lines = [];
-  if (cfg.show.hint || cfg.show.vim || cfg.show.dir || cfg.show.model || cfg.show.git || cfg.show.todayTokens || cfg.show.totalTokens) {
+  if (
+    cfg.show.hint ||
+    cfg.show.vim ||
+    cfg.show.dir ||
+    cfg.show.model ||
+    cfg.show.git ||
+    cfg.show.todayTokens ||
+    cfg.show.weekTokens ||
+    cfg.show.monthTokens ||
+    cfg.show.totalTokens
+  ) {
     const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git, usageSummary);
     if (meta) lines.push(meta);
   }

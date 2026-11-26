@@ -33,7 +33,7 @@ node ~/.gemini/config/agy-bar/app/bin/agy-bar.mjs <command>
 
 ## Toggleable Items
 
-`hint`, `vim`, `dir`, `model`, `effort`, `git`, `gitDirty`, `context`, `contextBar`, `contextDelta`, `compactHint`, `capacity`, `cache`, `cacheTtl`, `ttft`, `speed`, `cost`, `session`, `todayTokens`, `totalTokens`, `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset`
+`hint`, `vim`, `dir`, `model`, `effort`, `git`, `gitDirty`, `context`, `contextBar`, `contextDelta`, `compactHint`, `capacity`, `cache`, `cacheTtl`, `ttft`, `speed`, `cost`, `session`, `todayTokens`, `weekTokens`, `monthTokens`, `totalTokens`, `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset`
 
 ## Workflow
 
