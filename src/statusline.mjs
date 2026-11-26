@@ -33,12 +33,27 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     });
 
     let usageSummary = null;
-    if (config.show.todayTokens || config.show.weekTokens || config.show.monthTokens || config.show.totalTokens) {
+    if (
+      config.show.todayTokens ||
+      config.show.weekTokens ||
+      config.show.monthTokens ||
+      config.show.totalTokens ||
+      config.show.todayCost ||
+      config.show.cost
+    ) {
       usageSummary = await getOrRefreshUsageSummary({
+        sessionId: telemetry.sessionId,
         deltaTokens: telemetry.turnTokensDelta || 0,
+        deltaCostUsd: telemetry.turnCostDeltaUsd || 0,
         allowScan: config.dbTiming,
       });
     }
+
+    const effectiveSessionCostUsd = Math.max(telemetry.sessionCostUsd || 0, usageSummary?.sessionCostUsd || 0);
+    const effectiveTelemetry =
+      effectiveSessionCostUsd !== telemetry.sessionCostUsd
+        ? { ...telemetry, sessionCostUsd: effectiveSessionCostUsd }
+        : telemetry;
 
     if (!plain && config.tabTitle) {
       const tab = syncTabTitle(payload, {
@@ -58,7 +73,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       config,
       color,
       git,
-      telemetry,
+      telemetry: effectiveTelemetry,
       usageSummary,
       env,
       themeOptions: { env },

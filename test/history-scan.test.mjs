@@ -82,9 +82,9 @@ test('getOrRefreshUsageSummary returns cached totals and increments live deltas 
     const now = new Date('2026-11-26T12:00:00Z').getTime();
     const initial = computeUsageSummary(
       [
-        { ts: now - 10 * 86_400_000, input: 200_000, output: 20_000, cacheRead: 780_000 },
-        { ts: now - 3 * 86_400_000, input: 100_000, output: 10_000, cacheRead: 900_000 },
-        { ts: now - 1000, input: 50_000, output: 5_000, cacheRead: 450_000 },
+        { session: 'conv-old', model: 'Gemini 4 Neon', ts: now - 10 * 86_400_000, input: 200_000, output: 20_000, cacheRead: 780_000 },
+        { session: 'conv-live-123456', model: 'Gemini 4 Carbon', ts: now - 3 * 86_400_000, input: 100_000, output: 10_000, cacheRead: 900_000 },
+        { session: 'conv-live-123456', model: 'Gemini 4 Carbon', ts: now - 1000, input: 50_000, output: 5_000, cacheRead: 450_000 },
       ],
       { now },
     );
@@ -92,18 +92,27 @@ test('getOrRefreshUsageSummary returns cached totals and increments live deltas 
     assert.equal(initial.weekTokens, 1_515_000);
     assert.equal(initial.monthTokens, 2_515_000);
     assert.equal(initial.totalTokens, 2_515_000);
+    assert.ok(initial.todayCostUsd > 0.16 && initial.todayCostUsd < 0.18);
+    assert.ok(initial.recentSessionCosts['conv-live-123456'] > initial.todayCostUsd);
     saveUsageSummary(initial, { baseDir: dir });
 
     const bumped = await getOrRefreshUsageSummary({
       baseDir: dir,
       now: now + 5000,
+      sessionId: 'conv-live-123456789',
       deltaTokens: 100_000,
+      deltaCostUsd: 0.25,
       allowScan: false,
     });
     assert.equal(bumped.todayTokens, 605_000);
     assert.equal(bumped.weekTokens, 1_615_000);
     assert.equal(bumped.monthTokens, 2_615_000);
     assert.equal(bumped.totalTokens, 2_615_000);
+    assert.equal(bumped.todayCostUsd, Math.round((initial.todayCostUsd + 0.25) * 10_000) / 10_000);
+    assert.equal(
+      bumped.sessionCostUsd,
+      Math.round((initial.recentSessionCosts['conv-live-123456'] + 0.25) * 10_000) / 10_000,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

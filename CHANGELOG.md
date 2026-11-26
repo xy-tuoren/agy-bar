@@ -2,6 +2,13 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.8.2] - 2026-11-26
+
+### Added
+- **Live Conversation & Daily Estimated Cost Strip (`show.cost`, `show.todayCost`)**:
+  - Displays **`CHAT ~$1.24 · DAY $13.18`** on line 2 immediately to the left of the `5h` quota gauge (enabled by default in `dashboard`, gracefully compacting to `~$1.24 · DAY $13.18` → `~$1.24` → hidden on narrower terminals).
+  - Powered by `< 1ms` cached `usage-summary.json` (`todayCostUsd` + `recentSessionCosts` for resumed `agy -c` conversations) with live per-turn increments (`turnCostDeltaUsd`) so resumed multi-turn chats reflect their full conversation spend.
+
 ## [0.8.1] - 2026-11-26
 
 ### Changed

@@ -502,11 +502,18 @@ function buildPerfSegment(opts, config, palette, color, telemetry) {
   return joinWithSep(parts, '·', palette, color);
 }
 
-function buildCostSegment(opts, config, palette, color, telemetry) {
-  if (!opts.withCost || !config.show.cost) return '';
-  const cost = nonNegNumber(telemetry?.sessionCostUsd);
-  if (cost === null || cost <= 0) return '';
-  return fg(`~${formatUsd(cost)}`, palette.muted, color);
+function buildCostSegment(opts, config, palette, color, telemetry, usageSummary) {
+  const parts = [];
+  const chatCost = nonNegNumber(telemetry?.sessionCostUsd);
+  const dayCost = nonNegNumber(usageSummary?.todayCostUsd);
+  if (opts.withCost && config.show.cost && chatCost !== null && chatCost > 0) {
+    const val = fg(`~${formatUsd(chatCost)}`, palette.accent, color);
+    parts.push(opts.shortCost ? val : `${fg('CHAT', palette.muted, color)} ${val}`);
+  }
+  if (opts.withTodayCost && config.show.todayCost && dayCost !== null && dayCost > 0) {
+    parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatUsd(dayCost), palette.good, color)}`);
+  }
+  return joinWithSep(parts, ' · ', palette, color);
 }
 
 function buildSessionSegment(opts, config, palette, color, telemetry) {
@@ -560,23 +567,33 @@ function buildQuotaSegment(entries, opts, config, palette, color, now) {
   return joinWithSep(parts, opts.tight ? ' ' : ' │ ', palette, color);
 }
 
-function renderMetricsRow(payload, width, config, palette, color, now, { includePrefix = false, git = null, telemetry = null } = {}) {
+function renderMetricsRow(
+  payload,
+  width,
+  config,
+  palette,
+  color,
+  now,
+  { includePrefix = false, git = null, telemetry = null, usageSummary = null } = {},
+) {
   const context = payload?.context_window || {};
   const quotaEntries = selectQuotaEntries(payload?.quota, payload?.model, config.show);
   const sep = ' │ ';
 
   const stages = [
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: false, withCost: true, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: false, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: false, withCost: true, withTodayCost: true, shortCost: false, withSession: true, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: true, withTodayCost: true, shortCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: true, withTodayCost: false, shortCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: true, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: true, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: true, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withTtft: false, withSpeed: false, shortPerf: true, withCost: false, withTodayCost: false, shortCost: true, withSession: false, withDelta: false, withCompactHint: false, withCapacity: false, shortLabel: true, tight: true },
   ];
 
   let chosenLeft = '';
@@ -600,13 +617,13 @@ function renderMetricsRow(payload, width, config, palette, color, now, { include
     if (cacheSeg) leftParts.push(cacheSeg);
     const perfSeg = buildPerfSegment(stage, config, palette, color, telemetry);
     if (perfSeg) leftParts.push(perfSeg);
-    const costSeg = buildCostSegment(stage, config, palette, color, telemetry);
-    if (costSeg) leftParts.push(costSeg);
     const sessionSeg = buildSessionSegment(stage, config, palette, color, telemetry);
     if (sessionSeg) leftParts.push(sessionSeg);
 
     const left = joinWithSep(leftParts, stage.tight ? ' ' : sep, palette, color);
-    const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
+    const costSeg = buildCostSegment(stage, config, palette, color, telemetry, usageSummary);
+    const quotaSeg = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
+    const right = joinWithSep([costSeg, quotaSeg], stage.tight ? ' ' : sep, palette, color);
     const minGap = left && right ? 2 : 0;
     chosenLeft = left;
     chosenRight = right;
@@ -689,6 +706,7 @@ export function renderStatusline(
     includePrefix: false,
     git: null,
     telemetry,
+    usageSummary,
   });
   if (metrics) lines.push(metrics);
 

@@ -157,6 +157,7 @@ export const SAMPLE_USAGE_SUMMARY = Object.freeze({
   weekTokens: 810_000_000,
   monthTokens: 874_800_000,
   totalTokens: 906_200_000,
+  todayCostUsd: 13.18,
 });
 
 export function buildPreviewOutput({

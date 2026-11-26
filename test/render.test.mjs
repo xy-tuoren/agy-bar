@@ -304,3 +304,17 @@ test('renders active proxy badge and on-demand work-state badges (turn timer, su
   assert.ok(!activeLine1.includes('secret'));
   assert.ok(!activeLine1.includes('alice'));
 });
+
+test('renders CHAT and DAY estimated USD costs directly to the left of 5h quota on line 2', () => {
+  const out = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 148, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    {
+      color: false,
+      git: { branch: 'main', dirty: false },
+      telemetry: { cacheRemainingSec: 210, ttftMs: 1800, speedTokPerSec: 120, sessionCostUsd: 1.24 },
+      usageSummary: { todayTokens: 160_000_000, weekTokens: 800_000_000, monthTokens: 880_000_000, totalTokens: 910_000_000, todayCostUsd: 13.18 },
+    },
+  );
+  const line2 = out.split('\n')[1];
+  assert.match(line2, /CHAT ~\$1\.24 · DAY \$13\.18 │ 5h /);
+});

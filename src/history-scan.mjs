@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { configDir } from './config.mjs';
+import { estimateCost } from './pricing.mjs';
 import { parseStepTimingMetadata } from './step-timing.mjs';
 
 const MODEL_ENUM_MAP = Object.freeze({
@@ -129,22 +130,47 @@ export function computeUsageSummary(entries, { now = Date.now() } = {}) {
   const todayStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
   const weekStart = todayStart - 6 * 24 * 60 * 60 * 1000;
   const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
+  const recentCutoff = now - 48 * 60 * 60 * 1000;
 
   let todayTokens = 0;
   let weekTokens = 0;
   let monthTokens = 0;
   let totalTokens = 0;
+  let todayCostUsd = 0;
+  const sessionCosts = new Map();
+  const recentSessions = new Set();
 
   for (const e of entries || []) {
     const tok = (Number(e.input) || 0) + (Number(e.output) || 0) + (Number(e.cacheRead) || 0) + (Number(e.cacheWrite) || 0);
     if (tok <= 0) continue;
     totalTokens += tok;
+    const isToday = typeof e.ts === 'number' && localDateKey(e.ts) === todayKey;
     if (typeof e.ts === 'number') {
-      if (localDateKey(e.ts) === todayKey) todayTokens += tok;
+      if (isToday) todayTokens += tok;
       if (e.ts >= weekStart) weekTokens += tok;
       if (e.ts >= monthStart) monthTokens += tok;
     }
+
+    const sid = e.session ? String(e.session).slice(0, 16) : null;
+    if (sid && typeof e.ts === 'number' && e.ts >= recentCutoff) {
+      recentSessions.add(sid);
+    }
+
+    const est = estimateCost(e);
+    if (est.priced && est.costUsd > 0) {
+      if (isToday) todayCostUsd += est.costUsd;
+      if (sid) sessionCosts.set(sid, (sessionCosts.get(sid) || 0) + est.costUsd);
+    }
   }
+
+  const recentSessionCosts = {};
+  for (const sid of recentSessions) {
+    const cost = sessionCosts.get(sid);
+    if (cost && cost > 0) {
+      recentSessionCosts[sid] = Math.round(cost * 10_000) / 10_000;
+    }
+  }
+
   return {
     updatedAt: now,
     date: todayKey,
@@ -152,6 +178,8 @@ export function computeUsageSummary(entries, { now = Date.now() } = {}) {
     weekTokens,
     monthTokens,
     totalTokens,
+    todayCostUsd: Math.round(todayCostUsd * 10_000) / 10_000,
+    recentSessionCosts,
   };
 }
 
@@ -165,7 +193,8 @@ export function readUsageSummary({ baseDir = configDir(homedir()) } = {}) {
       typeof parsed.totalTokens === 'number' &&
       typeof parsed.todayTokens === 'number' &&
       typeof parsed.weekTokens === 'number' &&
-      typeof parsed.monthTokens === 'number'
+      typeof parsed.monthTokens === 'number' &&
+      typeof parsed.todayCostUsd === 'number'
     ) {
       return parsed;
     }
@@ -186,54 +215,80 @@ export function saveUsageSummary(summary, { baseDir = configDir(homedir()) } = {
   return summary;
 }
 
+function attachSessionCost(summary, sessionId) {
+  if (!summary) return null;
+  const sid = sessionId ? String(sessionId).slice(0, 16) : null;
+  const sessionCostUsd =
+    sid && summary.recentSessionCosts && typeof summary.recentSessionCosts[sid] === 'number'
+      ? summary.recentSessionCosts[sid]
+      : null;
+  return sessionCostUsd !== null ? { ...summary, sessionCostUsd } : summary;
+}
+
 export async function getOrRefreshUsageSummary({
   home = homedir(),
   baseDir = configDir(home),
   now = Date.now(),
   maxAgeMs = 5 * 60 * 1000,
+  sessionId = null,
   deltaTokens = 0,
+  deltaCostUsd = 0,
   allowScan = true,
   fallbackEntries = null,
 } = {}) {
   const todayKey = localDateKey(now);
   const existing = readUsageSummary({ baseDir });
+  const shortSid = sessionId ? String(sessionId).slice(0, 16) : null;
 
   if (existing && existing.date === todayKey && typeof existing.updatedAt === 'number' && now - existing.updatedAt < maxAgeMs) {
-    if (deltaTokens > 0) {
+    if (deltaTokens > 0 || deltaCostUsd > 0) {
+      const nextRecent = { ...(existing.recentSessionCosts || {}) };
+      if (shortSid && deltaCostUsd > 0) {
+        nextRecent[shortSid] = Math.round(((nextRecent[shortSid] || 0) + deltaCostUsd) * 10_000) / 10_000;
+      }
       const bumped = {
         ...existing,
         todayTokens: existing.todayTokens + deltaTokens,
         weekTokens: existing.weekTokens + deltaTokens,
         monthTokens: existing.monthTokens + deltaTokens,
         totalTokens: existing.totalTokens + deltaTokens,
+        todayCostUsd: Math.round((existing.todayCostUsd + deltaCostUsd) * 10_000) / 10_000,
+        recentSessionCosts: nextRecent,
       };
-      return saveUsageSummary(bumped, { baseDir });
+      return attachSessionCost(saveUsageSummary(bumped, { baseDir }), sessionId);
     }
-    return existing;
+    return attachSessionCost(existing, sessionId);
   }
 
   if (allowScan) {
     const scan = await scanConversationHistory({ home, baseDir, sourceFilter: 'all', useCache: true });
     if (scan.supported && scan.entries.length > 0) {
       const summary = computeUsageSummary(scan.entries, { now });
-      return saveUsageSummary(summary, { baseDir });
+      return attachSessionCost(saveUsageSummary(summary, { baseDir }), sessionId);
     }
   }
 
   if (Array.isArray(fallbackEntries) && fallbackEntries.length > 0) {
     const summary = computeUsageSummary(fallbackEntries, { now });
-    return saveUsageSummary(summary, { baseDir });
+    return attachSessionCost(saveUsageSummary(summary, { baseDir }), sessionId);
   }
 
   if (existing) {
-    const rolled = existing.date === todayKey ? existing : { ...existing, date: todayKey, todayTokens: 0, updatedAt: now };
-    if (deltaTokens > 0) {
+    const rolled =
+      existing.date === todayKey
+        ? { ...existing, recentSessionCosts: { ...(existing.recentSessionCosts || {}) } }
+        : { ...existing, date: todayKey, todayTokens: 0, todayCostUsd: 0, recentSessionCosts: { ...(existing.recentSessionCosts || {}) }, updatedAt: now };
+    if (deltaTokens > 0 || deltaCostUsd > 0) {
       rolled.todayTokens += deltaTokens;
       rolled.weekTokens += deltaTokens;
       rolled.monthTokens += deltaTokens;
       rolled.totalTokens += deltaTokens;
+      rolled.todayCostUsd = Math.round((rolled.todayCostUsd + deltaCostUsd) * 10_000) / 10_000;
+      if (shortSid && deltaCostUsd > 0) {
+        rolled.recentSessionCosts[shortSid] = Math.round(((rolled.recentSessionCosts[shortSid] || 0) + deltaCostUsd) * 10_000) / 10_000;
+      }
     }
-    return saveUsageSummary(rolled, { baseDir });
+    return attachSessionCost(saveUsageSummary(rolled, { baseDir }), sessionId);
   }
 
   return null;

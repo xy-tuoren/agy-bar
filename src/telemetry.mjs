@@ -256,6 +256,7 @@ export function recordTelemetry(
 
   const modelName = normalizeModelName(p.model);
   let turnTokensDelta = 0;
+  let turnCostDeltaUsd = 0;
 
   if (outDelta > 0) {
     sessionTurns += 1;
@@ -308,6 +309,7 @@ export function recordTelemetry(
       cacheWrite: curCacheWrite,
     });
     if (est.priced) {
+      turnCostDeltaUsd = Math.round(est.costUsd * 1_000_000) / 1_000_000;
       sessionCostUsd = Math.round((sessionCostUsd + est.costUsd) * 1_000_000) / 1_000_000;
       sessionCacheSavedUsd = Math.round((sessionCacheSavedUsd + est.cacheSavedUsd) * 1_000_000) / 1_000_000;
     }
@@ -421,6 +423,7 @@ export function recordTelemetry(
     sessionCacheSavedUsd,
     sessionDurationSec: Math.max(0, Math.round((now - startedAt) / 1000)),
     turnTokensDelta,
+    turnCostDeltaUsd,
     lastActivityAt,
     conversationTitle,
     customTitle,
