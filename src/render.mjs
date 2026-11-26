@@ -21,7 +21,8 @@ export function formatTokens(value) {
   if (n === null || n === 0) return '--';
   if (n < 1000) return String(Math.round(n));
   if (n < 999950) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n < 999_950_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  return `${(n / 1_000_000_000).toFixed(2)}B`;
 }
 
 export function formatReset(bucket, now = Date.now()) {
@@ -41,6 +42,16 @@ export function formatReset(bucket, now = Date.now()) {
   return remHours > 0 ? `${days}d${remHours}h` : `${days}d`;
 }
 
+export function formatCacheTtl(seconds) {
+  const sec = nonNegNumber(seconds);
+  if (sec === null) return '';
+  if (sec <= 0) return 'exp';
+  if (sec < 60) return `${Math.round(sec)}s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}m${String(s).padStart(2, '0')}s`;
+}
+
 export function renderBar(ratio, { width = 6, style = 'blocks', fillColor, trackColor, color = true } = {}) {
   const spec = BAR_STYLES[style] || BAR_STYLES.blocks;
   const clamped = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
@@ -57,8 +68,19 @@ export function detectModelGroup(model, quota) {
   const name = `${model?.id || ''} ${model?.display_name || ''}`.toLowerCase();
   if (/claude|sonnet|opus|haiku/.test(name)) return 'Claude';
   if (name.includes('argon') && quota && Object.hasOwn(quota, 'gemini-argon-wtu-weekly')) return 'Argon';
-  if (/gemini|hydrogen|carbon|argon|pro|flash/.test(name)) return 'Gemini';
+  if (/gemini|hydrogen|carbon|argon|neon|pro|flash/.test(name)) return 'Gemini';
   return null;
+}
+
+export function resolveContextThresholds(model, config) {
+  const name = `${model?.id || ''} ${model?.display_name || ''}`.toLowerCase();
+  const overrides = config.modelThresholds || {};
+  for (const [key, entry] of Object.entries(overrides)) {
+    if (key && name.includes(key.toLowerCase())) {
+      return { warn: entry.warn, danger: entry.danger };
+    }
+  }
+  return { warn: config.contextWarn, danger: config.contextDanger };
 }
 
 export function formatModelName(model, includeEffort = true) {
@@ -115,7 +137,6 @@ function alignRow(left, right, width) {
   if (!left) return rw > width ? clipAnsi(right, width) : ' '.repeat(Math.max(0, width - rw)) + right;
   const gap = width - lw - rw;
   if (gap >= 1) return left + ' '.repeat(gap) + right;
-  // Last-resort clip so a line never wraps.
   if (rw + 2 <= width) {
     const clippedLeft = clipAnsi(left, width - rw - 1);
     const finalGap = Math.max(1, width - visibleWidth(clippedLeft) - rw);
@@ -171,9 +192,11 @@ function computeCachePercent(context) {
   return (cached / (input + cached)) * 100;
 }
 
-function buildContextSegment(context, opts, config, palette, color) {
-  const { show, barStyle, barWidth, contextWarn, contextDanger } = config;
+function buildContextSegment(payload, opts, config, palette, color, telemetry) {
+  const context = payload?.context_window || {};
+  const { show, barStyle, barWidth } = config;
   if (!show.context) return '';
+  const { warn: contextWarn, danger: contextDanger } = resolveContextThresholds(payload?.model, config);
   const pct = nonNegNumber(context?.used_percentage);
   const size = nonNegNumber(context?.context_window_size);
   const pctText = pct === null ? '--' : `${pct.toFixed(1)}%`;
@@ -199,19 +222,39 @@ function buildContextSegment(context, opts, config, palette, color) {
     pieces.push(bar);
   }
   pieces.push(pct !== null && pct >= contextWarn ? bold(fg(pctText, tone, color), color) : fg(pctText, palette.text, color));
+  if (opts.withDelta && show.contextDelta && telemetry?.contextDelta > 0) {
+    pieces.push(fg(`+${formatTokens(telemetry.contextDelta)}`, palette.muted, color));
+  }
   if (opts.withCapacity && show.capacity && size !== null && size > 0) {
     pieces.push(fg(`(${formatTokens(size)})`, palette.muted, color));
   }
   return pieces.join(' ');
 }
 
-function buildCacheSegment(context, opts, config, palette, color) {
+function buildCacheSegment(context, opts, config, palette, color, telemetry) {
   if (!opts.withCache || !config.show.cache) return '';
   const hit = computeCachePercent(context);
   if (hit === null) return '';
   const hitText = `${Math.round(hit)}%`;
   const tone = hit >= 70 ? palette.good : hit >= 30 ? palette.text : palette.warn;
-  return `${fg('CACHE', palette.muted, color)} ${fg(hitText, tone, color)}`;
+  let seg = `${fg('CACHE', palette.muted, color)} ${fg(hitText, tone, color)}`;
+
+  if (opts.withCacheTtl && config.show.cacheTtl && telemetry && nonNegNumber(telemetry.cacheRemainingSec) !== null) {
+    const rem = telemetry.cacheRemainingSec;
+    const ttlText = formatCacheTtl(rem);
+    const ttlTone = rem <= 30 ? palette.danger : rem <= 90 ? palette.warn : palette.muted;
+    seg += `${fg('·', palette.sep, color)}${rem <= 30 ? bold(fg(ttlText, ttlTone, color), color) : fg(ttlText, ttlTone, color)}`;
+  }
+  return seg;
+}
+
+function buildSpeedSegment(opts, config, palette, color, telemetry) {
+  if (!opts.withSpeed || !config.show.speed) return '';
+  const rate = nonNegNumber(telemetry?.speedTokPerSec);
+  if (rate === null || rate <= 0) return '';
+  const label = `${Math.round(rate)}t/s`;
+  const tone = rate >= 60 ? palette.accent : rate >= 25 ? palette.text : palette.warn;
+  return fg(label, tone, color);
 }
 
 function buildQuotaSegment(entries, opts, config, palette, color, now) {
@@ -254,20 +297,21 @@ function buildQuotaSegment(entries, opts, config, palette, color, now) {
   return joinWithSep(parts, opts.tight ? ' ' : ' │ ', palette, color);
 }
 
-function renderMetricsRow(payload, width, config, palette, color, now, { includePrefix = false, git = null } = {}) {
+function renderMetricsRow(payload, width, config, palette, color, now, { includePrefix = false, git = null, telemetry = null } = {}) {
   const context = payload?.context_window || {};
   const quotaEntries = selectQuotaEntries(payload?.quota, payload?.model, config.show);
   const sep = ' │ ';
 
   const stages = [
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCapacity: true, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCapacity: false, shortLabel: false, tight: false },
-    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCapacity: false, shortLabel: true, tight: true },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: true, withDelta: true, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: true, withReset: false, withCache: true, withCacheTtl: true, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: true, withCache: true, withCacheTtl: true, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: includePrefix, withBar: true, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: includePrefix, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: true, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: true, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: false, shortLabel: false, tight: false },
+    { withPrefix: false, withGit: false, withBar: false, withQuotaBar: false, withReset: false, withCache: false, withCacheTtl: false, withSpeed: false, withDelta: false, withCapacity: false, shortLabel: true, tight: true },
   ];
 
   let chosenLeft = '';
@@ -281,10 +325,12 @@ function renderMetricsRow(payload, width, config, palette, color, now, { include
       const gitSeg = formatGitSegment(git, config.show, palette, color, 16);
       if (gitSeg) leftParts.push(gitSeg);
     }
-    const ctxSeg = buildContextSegment(context, stage, config, palette, color);
+    const ctxSeg = buildContextSegment(payload, stage, config, palette, color, telemetry);
     if (ctxSeg) leftParts.push(ctxSeg);
-    const cacheSeg = buildCacheSegment(context, stage, config, palette, color);
+    const cacheSeg = buildCacheSegment(context, stage, config, palette, color, telemetry);
     if (cacheSeg) leftParts.push(cacheSeg);
+    const speedSeg = buildSpeedSegment(stage, config, palette, color, telemetry);
+    if (speedSeg) leftParts.push(speedSeg);
 
     const left = joinWithSep(leftParts, stage.tight ? ' ' : sep, palette, color);
     const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
@@ -316,6 +362,7 @@ export function renderStatusline(
     now = Date.now(),
     color = true,
     git = null,
+    telemetry = null,
     themeOptions = {},
   } = {},
 ) {
@@ -330,6 +377,7 @@ export function renderStatusline(
     const row = renderMetricsRow(safePayload, width, cfg, palette, useColor, now, {
       includePrefix: true,
       git,
+      telemetry,
     });
     return row || renderFallback(cfg, { color: useColor, theme: resolved.name });
   }
@@ -338,11 +386,11 @@ export function renderStatusline(
     const row = renderMetricsRow(safePayload, width, cfg, palette, useColor, now, {
       includePrefix: false,
       git: null,
+      telemetry,
     });
     return row || renderFallback(cfg, { color: useColor, theme: resolved.name });
   }
 
-  // Default: 2-line dashboard preset.
   const lines = [];
   if (cfg.show.hint || cfg.show.model || cfg.show.git) {
     const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git);
@@ -351,6 +399,7 @@ export function renderStatusline(
   const metrics = renderMetricsRow(safePayload, width, cfg, palette, useColor, now, {
     includePrefix: false,
     git: null,
+    telemetry,
   });
   if (metrics) lines.push(metrics);
 

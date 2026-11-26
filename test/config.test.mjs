@@ -37,9 +37,15 @@ test('applyConfigCommand persists presets, themes, bar styles, toggles, and rese
     assert.equal(res.config.barWidth, 8);
     assert.equal(res.config.show.git, false);
 
+    res = applyConfigCommand(['set', 'cacheTtlSec', '240', 'ledger', 'off', 'modelThreshold.claude.warn', '60', 'modelThreshold.claude.danger', '80'], file);
+    assert.equal(res.config.cacheTtlSec, 240);
+    assert.equal(res.config.ledger, false);
+    assert.deepEqual(res.config.modelThresholds.claude, { warn: 60, danger: 80 });
+
     // Ensure disk JSON only stores compact overrides.
     const rawOnDisk = JSON.parse(readFileSync(file, 'utf8'));
     assert.deepEqual(rawOnDisk.show, { git: false, capacity: true, cache: true });
+    assert.deepEqual(rawOnDisk.modelThresholds, { claude: { warn: 60, danger: 80 } });
 
     res = applyConfigCommand(['reset'], file);
     assert.equal(res.config.preset, 'dashboard');

@@ -20,8 +20,11 @@ export const PRESETS = Object.freeze({
     gitDirty: true,
     context: true,
     contextBar: true,
+    contextDelta: false,
     capacity: true,
     cache: true,
+    cacheTtl: true,
+    speed: true,
     quota: true,
     quotaBar: true,
     quota5h: true,
@@ -36,8 +39,11 @@ export const PRESETS = Object.freeze({
     gitDirty: true,
     context: true,
     contextBar: true,
+    contextDelta: false,
     capacity: false,
     cache: false,
+    cacheTtl: false,
+    speed: false,
     quota: true,
     quotaBar: false,
     quota5h: true,
@@ -52,8 +58,11 @@ export const PRESETS = Object.freeze({
     gitDirty: false,
     context: true,
     contextBar: false,
+    contextDelta: false,
     capacity: true,
     cache: false,
+    cacheTtl: false,
+    speed: false,
     quota: true,
     quotaBar: false,
     quota5h: true,
@@ -70,10 +79,13 @@ export const DEFAULT_CONFIG = Object.freeze({
   theme: 'auto',
   barStyle: 'blocks',
   barWidth: 6,
+  cacheTtlSec: 300,
+  ledger: true,
   contextWarn: 70,
   contextDanger: 88,
   quotaWarn: 25,
   quotaDanger: 10,
+  modelThresholds: Object.freeze({}),
   show: PRESETS.dashboard,
 });
 
@@ -90,9 +102,20 @@ const SHOW_ALIASES = Object.freeze({
   contextbar: 'contextBar',
   'context-bar': 'contextBar',
   context_bar: 'contextBar',
+  contextdelta: 'contextDelta',
+  'context-delta': 'contextDelta',
+  context_delta: 'contextDelta',
+  delta: 'contextDelta',
   capacity: 'capacity',
   cap: 'capacity',
   cache: 'cache',
+  cachettl: 'cacheTtl',
+  'cache-ttl': 'cacheTtl',
+  cache_ttl: 'cacheTtl',
+  ttl: 'cacheTtl',
+  speed: 'speed',
+  tps: 'speed',
+  toks: 'speed',
   quota: 'quota',
   quotabar: 'quotaBar',
   'quota-bar': 'quotaBar',
@@ -134,16 +157,32 @@ function clampInt(value, min, max, fallback) {
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+function normalizeModelThresholds(raw, fallbackWarn, fallbackDanger) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [key, entry] of Object.entries(raw)) {
+    const cleanKey = String(key || '').trim().toLowerCase();
+    if (!cleanKey || !entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const warn = clampInt(entry.warn, 10, 95, fallbackWarn);
+    const danger = clampInt(entry.danger, warn, 99, Math.max(warn, fallbackDanger));
+    out[cleanKey] = { warn, danger };
+  }
+  return out;
+}
+
 export function normalizeConfig(raw) {
   const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
   const preset = PRESET_NAMES.includes(input.preset) ? input.preset : DEFAULT_CONFIG.preset;
   const theme = THEME_NAMES.includes(input.theme) ? input.theme : DEFAULT_CONFIG.theme;
   const barStyle = BAR_STYLE_NAMES.includes(input.barStyle) ? input.barStyle : DEFAULT_CONFIG.barStyle;
   const barWidth = clampInt(input.barWidth, 4, 14, DEFAULT_CONFIG.barWidth);
+  const cacheTtlSec = clampInt(input.cacheTtlSec, 30, 3600, DEFAULT_CONFIG.cacheTtlSec);
+  const ledger = typeof input.ledger === 'boolean' ? input.ledger : DEFAULT_CONFIG.ledger;
   const contextWarn = clampInt(input.contextWarn, 10, 95, DEFAULT_CONFIG.contextWarn);
   const contextDanger = clampInt(input.contextDanger, contextWarn, 99, DEFAULT_CONFIG.contextDanger);
   const quotaDanger = clampInt(input.quotaDanger, 1, 50, DEFAULT_CONFIG.quotaDanger);
   const quotaWarn = clampInt(input.quotaWarn, quotaDanger, 80, DEFAULT_CONFIG.quotaWarn);
+  const modelThresholds = normalizeModelThresholds(input.modelThresholds, contextWarn, contextDanger);
 
   const show = { ...PRESETS[preset] };
   if (input.show && typeof input.show === 'object' && !Array.isArray(input.show)) {
@@ -159,10 +198,13 @@ export function normalizeConfig(raw) {
     theme,
     barStyle,
     barWidth,
+    cacheTtlSec,
+    ledger,
     contextWarn,
     contextDanger,
     quotaWarn,
     quotaDanger,
+    modelThresholds,
     show,
   };
 }
@@ -184,10 +226,13 @@ export function serializeConfig(cfg) {
     barStyle: normalized.barStyle,
     barWidth: normalized.barWidth,
   };
+  if (normalized.cacheTtlSec !== DEFAULT_CONFIG.cacheTtlSec) out.cacheTtlSec = normalized.cacheTtlSec;
+  if (normalized.ledger !== DEFAULT_CONFIG.ledger) out.ledger = normalized.ledger;
   if (normalized.contextWarn !== DEFAULT_CONFIG.contextWarn) out.contextWarn = normalized.contextWarn;
   if (normalized.contextDanger !== DEFAULT_CONFIG.contextDanger) out.contextDanger = normalized.contextDanger;
   if (normalized.quotaWarn !== DEFAULT_CONFIG.quotaWarn) out.quotaWarn = normalized.quotaWarn;
   if (normalized.quotaDanger !== DEFAULT_CONFIG.quotaDanger) out.quotaDanger = normalized.quotaDanger;
+  if (Object.keys(normalized.modelThresholds).length > 0) out.modelThresholds = normalized.modelThresholds;
   const overrides = computeShowOverrides(normalized.preset, normalized.show);
   if (Object.keys(overrides).length > 0) out.show = overrides;
   return out;
@@ -222,7 +267,11 @@ export function applyConfigCommand(args = [], path = configPath()) {
     };
   }
 
-  let next = { ...current, show: { ...current.show } };
+  let next = {
+    ...current,
+    modelThresholds: structuredClone(current.modelThresholds),
+    show: { ...current.show },
+  };
 
   if (action === 'reset' && rest.length === 0) {
     next = normalizeConfig(null);
@@ -280,6 +329,16 @@ export function applyConfigCommand(args = [], path = configPath()) {
           throw new Error('barWidth must be an integer between 4 and 14.');
         }
         next.barWidth = n;
+      } else if (['cachettlsec', 'cache-ttl-sec', 'cache_ttl_sec'].includes(lower)) {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 30 || n > 3600) {
+          throw new Error('cacheTtlSec must be between 30 and 3600 seconds.');
+        }
+        next.cacheTtlSec = Math.round(n);
+      } else if (lower === 'ledger') {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('ledger must be on/off (or true/false).');
+        next.ledger = parsed;
       } else if (['contextwarn', 'context-warn'].includes(lower)) {
         next.contextWarn = Number(value);
       } else if (['contextdanger', 'context-danger'].includes(lower)) {
@@ -288,6 +347,20 @@ export function applyConfigCommand(args = [], path = configPath()) {
         next.quotaWarn = Number(value);
       } else if (['quotadanger', 'quota-danger'].includes(lower)) {
         next.quotaDanger = Number(value);
+      } else if (lower.startsWith('modelthreshold.') || lower.startsWith('modelthresholds.')) {
+        const parts = lower.split('.');
+        if (parts.length !== 3 || !['warn', 'danger'].includes(parts[2])) {
+          throw new Error('Use modelThreshold.<model>.warn or modelThreshold.<model>.danger (e.g. modelThreshold.claude.warn 60).');
+        }
+        const [, modelKey, kind] = parts;
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 10 || n > 99) {
+          throw new Error(`${key} must be a percentage between 10 and 99.`);
+        }
+        const cur = next.modelThresholds[modelKey] || { warn: next.contextWarn, danger: next.contextDanger };
+        cur[kind] = Math.round(n);
+        if (cur.danger < cur.warn) cur.danger = cur.warn;
+        next.modelThresholds[modelKey] = cur;
       } else if (lower.startsWith('show.')) {
         const target = resolveShowKey(lower.slice(5));
         if (!target) throw new Error(`Unknown setting "${key}".`);

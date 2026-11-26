@@ -1,0 +1,159 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { readLedger } from '../src/stats.mjs';
+import { listSessions, recordTelemetry } from '../src/telemetry.mjs';
+
+test('tracks turn speed (tok/s), 5-min cache TTL countdown, context delta, and appends to ledger', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-tel-'));
+  try {
+    const t0 = 1_795_600_000_000;
+    const basePayload = {
+      conversation_id: 'conv-1001',
+      workspace: { current_dir: '/Users/dev/project-a' },
+      model: { id: 'gemini-4-carbon', display_name: 'Gemini 4 Carbon (High)', effort: 'high' },
+      quota: {
+        'gemini-5h': { remaining_fraction: 0.9, reset_in_seconds: 9000 },
+        'gemini-weekly': { remaining_fraction: 0.7, reset_in_seconds: 200000 },
+      },
+    };
+
+    // Turn starts: agent enters working state with initial totals.
+    const r1 = recordTelemetry(
+      {
+        ...basePayload,
+        agent_state: 'working',
+        context_window: {
+          context_window_size: 1_000_000,
+          used_percentage: 10.0,
+          total_input_tokens: 10000,
+          total_output_tokens: 0,
+          current_usage: { input_tokens: 10000, output_tokens: 0, cache_read_input_tokens: 0 },
+        },
+      },
+      { now: t0, baseDir: dir, git: { branch: 'main', dirty: false } },
+    );
+    assert.equal(r1.speedTokPerSec, null);
+    assert.equal(r1.cacheRemainingSec, 300);
+
+    // 10 seconds later, agent finishes producing 1,500 output tokens -> 150 tok/s.
+    const r2 = recordTelemetry(
+      {
+        ...basePayload,
+        agent_state: 'idle',
+        context_window: {
+          context_window_size: 1_000_000,
+          used_percentage: 12.5,
+          total_input_tokens: 22000,
+          total_output_tokens: 1500,
+          current_usage: { input_tokens: 12000, output_tokens: 1500, cache_read_input_tokens: 80000 },
+        },
+      },
+      { now: t0 + 10_000, baseDir: dir, git: { branch: 'main', dirty: true } },
+    );
+    assert.equal(r2.speedTokPerSec, 150);
+    assert.equal(r2.turnDurationMs, 10_000);
+    assert.equal(r2.contextDelta, 25_000);
+    assert.equal(r2.cacheRemainingSec, 300);
+
+    // 250 seconds later with no new turn -> cache TTL counts down to 50s.
+    const r3 = recordTelemetry(
+      {
+        ...basePayload,
+        agent_state: 'idle',
+        context_window: {
+          context_window_size: 1_000_000,
+          used_percentage: 12.5,
+          total_input_tokens: 22000,
+          total_output_tokens: 1500,
+          current_usage: { input_tokens: 12000, output_tokens: 1500, cache_read_input_tokens: 80000 },
+        },
+      },
+      { now: t0 + 260_000, baseDir: dir },
+    );
+    assert.equal(r3.cacheRemainingSec, 50);
+    assert.equal(r3.cacheExpired, false);
+
+    // After 5+ minutes -> cache expires cleanly.
+    const r4 = recordTelemetry(
+      {
+        ...basePayload,
+        agent_state: 'idle',
+        context_window: {
+          context_window_size: 1_000_000,
+          used_percentage: 12.5,
+          total_input_tokens: 22000,
+          total_output_tokens: 1500,
+          current_usage: { input_tokens: 12000, output_tokens: 1500, cache_read_input_tokens: 80000 },
+        },
+      },
+      { now: t0 + 320_000, baseDir: dir },
+    );
+    assert.equal(r4.cacheRemainingSec, 0);
+    assert.equal(r4.cacheExpired, true);
+
+    // Exactly one turn appended to ledger.
+    const ledger = readLedger({ baseDir: dir });
+    assert.equal(ledger.length, 1);
+    assert.equal(ledger[0].model, 'Gemini 4 Carbon');
+    assert.equal(ledger[0].output, 1500);
+    assert.equal(ledger[0].tokPerSec, 150);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('isolates concurrent CLI sessions and ignores resumed baseline spikes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-multi-'));
+  try {
+    const t0 = 1_795_600_000_000;
+
+    // Resumed session with 45,000 prior output tokens shouldn't log a fake 45K delta.
+    recordTelemetry(
+      {
+        conversation_id: 'session-a',
+        agent_state: 'idle',
+        workspace: { current_dir: '/repo/alpha' },
+        model: { id: 'gemini-4-neon', display_name: 'Gemini 4 Neon' },
+        context_window: {
+          context_window_size: 1_000_000,
+          used_percentage: 38.0,
+          total_input_tokens: 180000,
+          total_output_tokens: 45000,
+          current_usage: { input_tokens: 5000, output_tokens: 400, cache_read_input_tokens: 90000 },
+        },
+      },
+      { now: t0, baseDir: dir, git: { branch: 'main', dirty: false } },
+    );
+
+    recordTelemetry(
+      {
+        conversation_id: 'session-b',
+        agent_state: 'working',
+        workspace: { current_dir: '/repo/beta' },
+        model: { id: 'claude-sonnet-4-6', display_name: 'Claude Sonnet 4.6' },
+        context_window: {
+          context_window_size: 200_000,
+          used_percentage: 62.0,
+          total_input_tokens: 40000,
+          total_output_tokens: 0,
+          current_usage: null,
+        },
+      },
+      { now: t0 + 1000, baseDir: dir, git: { branch: 'feat/ui', dirty: true } },
+    );
+
+    assert.equal(readLedger({ baseDir: dir }).length, 0);
+
+    const sessions = listSessions({ baseDir: dir, now: t0 + 2000 });
+    assert.equal(sessions.length, 2);
+    assert.equal(sessions[0].sessionId, 'session-b');
+    assert.equal(sessions[0].branch, 'feat/ui');
+    assert.equal(sessions[1].sessionId, 'session-a');
+    assert.equal(sessions[1].model, 'Gemini 4 Neon');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

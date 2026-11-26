@@ -2,16 +2,18 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyConfigCommand, BAR_STYLE_NAMES, PRESET_NAMES } from '../src/config.mjs';
+import { applyConfigCommand, BAR_STYLE_NAMES, loadConfig, PRESET_NAMES } from '../src/config.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
+import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
+import { aggregateStats, formatStatsReport, PERIOD_NAMES, readLedger } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
 import { THEME_NAMES } from '../src/themes.mjs';
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
 
 export const HELP_TEXT = [
-  `agy-bar v${pkg.version} — Modern minimal dashboard statusline for Antigravity CLI (agy)`,
+  `agy-bar v${pkg.version} — Modern minimal dashboard statusline & CLI HUD for Antigravity CLI (agy)`,
   '',
   'Usage: agy-bar <command> [options]',
   '',
@@ -24,21 +26,32 @@ export const HELP_TEXT = [
   '',
   '  uninstall [options]     Remove agy-bar and restore previous statusLine setting',
   '    --remove-skill        Also remove the managed /agy-bar skill',
-  '    --purge               Also remove ~/.gemini/config/agy-bar/config.json',
+  '    --purge               Also remove ~/.gemini/config/agy-bar/config.json & telemetry',
   '',
   '  config <subcommand>     Inspect or update display preferences',
   '    show                  Print effective configuration as JSON',
   `    preset <name>         Switch layout preset (${PRESET_NAMES.join(' | ')})`,
   `    theme <name>          Switch theme (${THEME_NAMES.join(' | ')})`,
   `    bar-style <style>     Switch bar style (${BAR_STYLE_NAMES.join(' | ')})`,
-  '    enable <items...>     Enable specific items (git, cache, capacity, reset, ...)',
-  '    disable <items...>    Disable specific items',
-  '    set <key> <value>...  Set barWidth, thresholds, or show.<item> on|off',
+  '    enable <items...>     Enable items (git, cache, cacheTtl, speed, contextDelta, ...)',
+  '    disable <items...>    Disable items',
+  '    set <key> <value>...  Set barWidth, cacheTtlSec, ledger, thresholds, modelThreshold.<m>.warn',
   '    reset                 Restore default settings',
+  '',
+  '  stats [period] [opts]   Show local CLI token usage, cache savings & estimated API cost',
+  `    period                ${PERIOD_NAMES.join(' | ')} (default: 7d)`,
+  '    --model <filter>      Filter by model substring (e.g. claude, carbon, neon)',
+  '    --json                Output machine-readable JSON',
+  '    --plain               Disable ANSI colors',
+  '',
+  '  monitor [options]       Live multi-CLI HUD tracking all active agy terminals',
+  '    --interval <ms>       Refresh interval in milliseconds (default: 1000)',
+  '    --once                Print a single snapshot and exit',
+  '    --plain               Disable ANSI colors',
   '',
   '  preview [options]       Render live sample statuslines in your terminal',
   '    --scenario <name>     normal | warning | critical | claude | all (default: normal)',
-  '    --width <cols>        Simulated terminal width (default: 100)',
+  '    --width <cols>        Simulated terminal width (default: 112)',
   '    --preset <name>       Override preset for preview',
   '    --theme <name>        Override theme for preview',
   '    --bar-style <style>   Override gauge style for preview',
@@ -58,7 +71,9 @@ function parseFlags(args) {
     else if (arg === '--remove-skill') flags.removeSkill = true;
     else if (arg === '--purge') flags.purge = true;
     else if (arg === '--plain') flags.plain = true;
-    else if (['--preset', '--theme', '--bar-style', '--scenario', '--width'].includes(arg)) {
+    else if (arg === '--json') flags.json = true;
+    else if (arg === '--once') flags.once = true;
+    else if (['--preset', '--theme', '--bar-style', '--scenario', '--width', '--model', '--interval'].includes(arg)) {
       const value = args[++i];
       if (!value) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -123,9 +138,36 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (command === 'stats') {
+    const { flags, positional } = parseFlags(rest);
+    const period = positional[0] || '7d';
+    const entries = readLedger();
+    const report = aggregateStats(entries, { period, modelFilter: flags.model || null });
+    if (flags.json) {
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
+    const cfg = loadConfig();
+    const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
+    console.log(formatStatsReport(report, { color, theme: cfg.theme }));
+    return;
+  }
+
+  if (command === 'monitor') {
+    const { flags } = parseFlags(rest);
+    const intervalMs = flags.interval ? Number(flags.interval) : 1000;
+    if (!Number.isFinite(intervalMs) || intervalMs < 250 || intervalMs > 60000) {
+      throw new Error('--interval must be between 250 and 60000 milliseconds.');
+    }
+    const cfg = loadConfig();
+    const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
+    await startMonitor({ intervalMs, once: Boolean(flags.once), color });
+    return;
+  }
+
   if (command === 'preview') {
     const { flags } = parseFlags(rest);
-    const width = flags.width ? Number(flags.width) : 100;
+    const width = flags.width ? Number(flags.width) : 112;
     if (!Number.isFinite(width) || width < 20 || width > 300) {
       throw new Error('--width must be a number between 20 and 300.');
     }

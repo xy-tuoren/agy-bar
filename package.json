@@ -1,7 +1,7 @@
 {
   "name": "agy-bar",
-  "version": "0.1.0",
-  "description": "Modern minimal dashboard statusline for Antigravity CLI (agy) — context & quota gauges, cache hit rate, Git status, and adaptive narrow-width layout.",
+  "version": "0.2.0",
+  "description": "Zero-dependency dashboard statusline, 5-min cache TTL countdown, live tok/s speed, usage/cost ledger, and multi-CLI monitor for Antigravity CLI (agy).",
   "type": "module",
   "license": "MIT",
   "author": "xy-tuoren",
@@ -22,6 +22,7 @@
     "dashboard",
     "quota",
     "context-window",
+    "token-usage",
     "terminal"
   ],
   "engines": {
@@ -31,6 +32,7 @@
     "agy-bar": "./bin/agy-bar.mjs"
   },
   "files": [
+    "AGENTS.md",
     "bin/",
     "src/",
     "skills/",
@@ -43,6 +45,8 @@
     "install:agy": "node bin/agy-bar.mjs install",
     "uninstall:agy": "node bin/agy-bar.mjs uninstall",
     "preview": "node bin/agy-bar.mjs preview",
+    "stats": "node bin/agy-bar.mjs stats",
+    "monitor": "node bin/agy-bar.mjs monitor",
     "doctor": "node bin/agy-bar.mjs doctor"
   }
 }

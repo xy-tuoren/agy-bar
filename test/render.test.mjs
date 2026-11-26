@@ -132,3 +132,31 @@ test('buildPreviewOutput applies overridden preset cleanly without leaking dashb
   assert.ok(!minimalPreview.includes('CACHE'));
   assert.match(minimalPreview, /CTX 42\.6% \(1\.0M\)/);
 });
+
+test('renders Gemini 4 Neon, 5-min cache TTL countdown, tok/s speed, context delta, and per-model thresholds', () => {
+  const neonPayload = {
+    ...fixtures.geminiNormal,
+    terminal_width: 120,
+    model: { id: 'gemini-4-neon', display_name: 'Gemini 4 Neon', effort: 'medium' },
+  };
+  const out = renderStatusline(neonPayload, {
+    config: normalizeConfig({
+      preset: 'dashboard',
+      theme: 'slate-dark',
+      show: { contextDelta: true },
+      modelThresholds: { neon: { warn: 35, danger: 50 } },
+    }),
+    color: true,
+    telemetry: { cacheRemainingSec: 25, speedTokPerSec: 148.4, contextDelta: 14200 },
+  });
+  const plain = stripAnsi(out);
+  assert.match(plain, /Gemini 4 Neon · medium/);
+  assert.match(plain, /42\.6% \+14\.2K \(1\.0M\)/);
+  assert.match(plain, /CACHE 88%·25s/);
+  assert.match(plain, /148t\/s/);
+  assert.match(plain, /5h .*85%/);
+  // Warning amber RGB for slate-dark (251;191;36) triggered on 42.6% due to neon warn=35 override,
+  // and danger red RGB (248;113;113) triggered on 25s cache TTL.
+  assert.ok(out.includes('\x1b[38;2;251;191;36m'));
+  assert.ok(out.includes('\x1b[38;2;248;113;113m'));
+});

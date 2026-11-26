@@ -5,7 +5,7 @@ export const SAMPLE_PAYLOADS = Object.freeze({
   normal: Object.freeze({
     version: '1.5.16',
     agent_state: 'idle',
-    terminal_width: 100,
+    terminal_width: 112,
     model: {
       id: 'gemini-4-carbon',
       display_name: 'Gemini 4 Carbon (High)',
@@ -29,7 +29,7 @@ export const SAMPLE_PAYLOADS = Object.freeze({
   warning: Object.freeze({
     version: '1.5.16',
     agent_state: 'working',
-    terminal_width: 100,
+    terminal_width: 112,
     model: {
       id: 'gemini-4-carbon',
       display_name: 'Gemini 4 Carbon (High)',
@@ -53,7 +53,7 @@ export const SAMPLE_PAYLOADS = Object.freeze({
   critical: Object.freeze({
     version: '1.5.16',
     agent_state: 'tool_use',
-    terminal_width: 100,
+    terminal_width: 112,
     model: {
       id: 'gemini-4-carbon',
       display_name: 'Gemini 4 Carbon (High)',
@@ -77,7 +77,7 @@ export const SAMPLE_PAYLOADS = Object.freeze({
   claude: Object.freeze({
     version: '1.5.16',
     agent_state: 'idle',
-    terminal_width: 100,
+    terminal_width: 112,
     model: {
       id: 'claude-sonnet-4-6',
       display_name: 'Claude Sonnet 4.6',
@@ -100,9 +100,16 @@ export const SAMPLE_PAYLOADS = Object.freeze({
   }),
 });
 
+const SAMPLE_TELEMETRY = Object.freeze({
+  normal: Object.freeze({ cacheRemainingSec: 222, speedTokPerSec: 142, contextDelta: 12400 }),
+  warning: Object.freeze({ cacheRemainingSec: 68, speedTokPerSec: 96, contextDelta: 34800 }),
+  critical: Object.freeze({ cacheRemainingSec: 18, speedTokPerSec: 54, contextDelta: 61200 }),
+  claude: Object.freeze({ cacheRemainingSec: 255, speedTokPerSec: 118, contextDelta: 8900 }),
+});
+
 export function buildPreviewOutput({
   scenario = 'normal',
-  width = 100,
+  width = 112,
   preset = null,
   theme = null,
   barStyle = null,
@@ -126,10 +133,20 @@ export function buildPreviewOutput({
       throw new Error(`Unknown scenario "${name}". Choose: ${Object.keys(SAMPLE_PAYLOADS).join(', ')}, all`);
     }
     const payload = { ...template, terminal_width: width };
-    const git = name === 'warning' || name === 'critical' ? { branch: 'feat/statusline', dirty: true } : { branch: 'main', dirty: false };
-    const rendered = renderStatusline(payload, { config: cfg, color, git });
+    const git =
+      name === 'warning' || name === 'critical'
+        ? { branch: 'feat/statusline', dirty: true }
+        : { branch: 'main', dirty: false };
+    const rendered = renderStatusline(payload, {
+      config: cfg,
+      color,
+      git,
+      telemetry: SAMPLE_TELEMETRY[name],
+    });
     const rule = '─'.repeat(Math.max(12, width - 2));
-    blocks.push(`[${name} · preset=${cfg.preset} · theme=${cfg.theme} · bar=${cfg.barStyle} · ${width} cols]\n${rule}\n${rendered}\n${rule}`);
+    blocks.push(
+      `[${name} · preset=${cfg.preset} · theme=${cfg.theme} · bar=${cfg.barStyle} · ${width} cols]\n${rule}\n${rendered}\n${rule}`,
+    );
   }
 
   return blocks.join('\n\n');

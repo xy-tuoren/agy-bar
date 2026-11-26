@@ -1,8 +1,10 @@
+import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
+import { recordTelemetry } from './telemetry.mjs';
 
 export async function runStatusline({ stdin = process.stdin, stdout = process.stdout, env = process.env, argv = process.argv } = {}) {
   let raw = '';
@@ -17,7 +19,12 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     const payload = JSON.parse(raw);
     const cwd = payload?.workspace?.current_dir || payload?.cwd || null;
     const git = config.show.git && cwd ? readGitInfo(cwd, { checkDirty: config.show.gitDirty }) : null;
-    const rendered = renderStatusline(payload, { config, color, git, themeOptions: { env } });
+    const telemetry = recordTelemetry(payload, {
+      git,
+      cacheTtlSec: config.cacheTtlSec,
+      enableLedger: config.ledger,
+    });
+    const rendered = renderStatusline(payload, { config, color, git, telemetry, themeOptions: { env } });
     stdout.write(`${rendered}\n`);
   } catch {
     const fallback = renderFallback(config, { color });
@@ -25,6 +32,15 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+function isDirectInvocation() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+}
+
+if (isDirectInvocation()) {
   await runStatusline();
 }
