@@ -2,6 +2,11 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.6.1] - 2026-11-26
+
+### Added
+- **Minimal Always-On Token Summary in Bottom Statusbar (`show.todayTokens`, `show.totalTokens`)**: Displays `DAY 133.6M · ALL 903.9M` right beside the model name on line 1 (with automatic narrow-width degradation: `DAY + ALL` → `DAY` → hidden), backed by a `< 1ms` cached `usage-summary.json` snapshot that increments live on every turn and auto-syncs every 5 minutes without slowing down the statusline.
+
 ## [0.6.0] - 2026-11-26
 
 ### Added

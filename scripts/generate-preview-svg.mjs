@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeConfig } from '../src/config.mjs';
-import { SAMPLE_PAYLOADS, SAMPLE_TELEMETRY } from '../src/preview.mjs';
+import { SAMPLE_PAYLOADS, SAMPLE_TELEMETRY, SAMPLE_USAGE_SUMMARY } from '../src/preview.mjs';
 import { renderStatusline } from '../src/render.mjs';
 
 const OUTPUT_PATH = fileURLToPath(new URL('../assets/preview.svg', import.meta.url));
@@ -109,6 +109,7 @@ const darkNormal = renderStatusline(
     color: true,
     git: { branch: 'main', dirty: false },
     telemetry: SAMPLE_TELEMETRY.normal,
+    usageSummary: SAMPLE_USAGE_SUMMARY,
   },
 ).split('\n');
 
@@ -119,6 +120,7 @@ const darkWarning = renderStatusline(
     color: true,
     git: { branch: 'feat/statusline', dirty: true },
     telemetry: SAMPLE_TELEMETRY.warning,
+    usageSummary: SAMPLE_USAGE_SUMMARY,
   },
 ).split('\n');
 
@@ -129,6 +131,7 @@ const darkCritical = renderStatusline(
     color: true,
     git: { branch: 'feat/statusline', dirty: true },
     telemetry: SAMPLE_TELEMETRY.critical,
+    usageSummary: SAMPLE_USAGE_SUMMARY,
   },
 ).split('\n');
 
@@ -149,6 +152,7 @@ const lightNormal = renderStatusline(
     color: true,
     git: { branch: 'main', dirty: true },
     telemetry: SAMPLE_TELEMETRY.normal,
+    usageSummary: SAMPLE_USAGE_SUMMARY,
   },
 ).split('\n');
 

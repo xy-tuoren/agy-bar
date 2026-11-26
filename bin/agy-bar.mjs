@@ -3,7 +3,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyConfigCommand, BAR_STYLE_NAMES, COLOR_MODES, loadConfig, PRESET_NAMES, TAB_TITLE_SOURCES } from '../src/config.mjs';
-import { scanConversationHistory } from '../src/history-scan.mjs';
+import { computeUsageSummary, saveUsageSummary, scanConversationHistory } from '../src/history-scan.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
@@ -183,6 +183,9 @@ export async function main(argv = process.argv.slice(2)) {
       if (scan.supported && scan.entries.length > 0) {
         entries = scan.entries;
         sourceLabel = source === 'all' ? 'cli+desktop' : source;
+        if (source === 'all') {
+          saveUsageSummary(computeUsageSummary(scan.entries));
+        }
       } else {
         entries = readLedger();
         sourceLabel = 'ledger';

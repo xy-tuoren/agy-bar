@@ -216,35 +216,64 @@ function formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir
   return '';
 }
 
-function renderMetaLine(payload, width, config, palette, color, git) {
+function formatUsageSummarySegment(usageSummary, show, palette, color, { withTotal = true } = {}) {
+  if (!usageSummary || typeof usageSummary !== 'object') return '';
+  const parts = [];
+  const today = nonNegNumber(usageSummary.todayTokens);
+  const total = nonNegNumber(usageSummary.totalTokens);
+  if (show.todayTokens && today !== null && today > 0) {
+    parts.push(`${fg('DAY', palette.muted, color)} ${fg(formatTokens(today), palette.accent, color)}`);
+  }
+  if (withTotal && show.totalTokens && total !== null && total > 0) {
+    parts.push(`${fg('ALL', palette.muted, color)} ${fg(formatTokens(total), palette.branch, color)}`);
+  }
+  return joinWithSep(parts, ' · ', palette, color);
+}
+
+function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null) {
   const { show } = config;
   const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
   const hintText = show.hint ? (isBusy ? 'esc to cancel' : '? for shortcuts') : '';
   const vimBadge = formatVimBadge(payload, show, palette, color);
-  const rightText = show.model ? formatModelName(payload?.model, show.effort) : '';
-  const right = rightText ? fg(rightText, palette.muted, color) : '';
+  const modelText = show.model ? formatModelName(payload?.model, show.effort) : '';
+  const modelSeg = modelText ? fg(modelText, palette.muted, color) : '';
+
+  const usageFull = formatUsageSummarySegment(usageSummary, show, palette, color, { withTotal: true });
+  const usageDayOnly = formatUsageSummarySegment(usageSummary, show, palette, color, { withTotal: false });
+
+  const rightFull = joinWithSep([usageFull, modelSeg], ' │ ', palette, color);
+  const rightDayOnly = joinWithSep([usageDayOnly, modelSeg], ' │ ', palette, color);
+  const rightModelOnly = modelSeg;
 
   const wsFull = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 24 });
   const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 12 });
   const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: false, maxBranchLen: 14 });
   const hintSeg = hintText ? fg(hintText, palette.muted, color) : '';
 
-  const candidates = [
-    () => joinWithSep([vimBadge, hintSeg, wsFull], ' · ', palette, color),
-    () => joinWithSep([vimBadge, hintSeg, wsShort], ' · ', palette, color),
-    () => joinWithSep([vimBadge, wsShort || gitOnly || hintSeg], ' · ', palette, color),
-    () => vimBadge || gitOnly || hintSeg,
-    () => '',
+  const leftFull = joinWithSep([vimBadge, hintSeg, wsFull], ' · ', palette, color);
+  const leftShort = joinWithSep([vimBadge, hintSeg, wsShort], ' · ', palette, color);
+  const leftCompact = joinWithSep([vimBadge, wsShort || gitOnly || hintSeg], ' · ', palette, color);
+  const leftMinimal = vimBadge || gitOnly || hintSeg;
+
+  const pairs = [
+    [leftFull, rightFull],
+    [leftShort, rightFull],
+    [leftFull, rightDayOnly],
+    [leftShort, rightDayOnly],
+    [leftFull, rightModelOnly],
+    [leftShort, rightModelOnly],
+    [leftCompact, rightModelOnly],
+    [leftMinimal, rightModelOnly],
+    ['', rightModelOnly],
   ];
 
-  for (const buildLeft of candidates) {
-    const left = buildLeft();
+  for (const [left, right] of pairs) {
     const minGap = left && right ? 2 : 0;
     if (visibleWidth(left) + minGap + visibleWidth(right) <= width) {
       return alignRow(left, right, width);
     }
   }
-  return alignRow('', right, width);
+  return alignRow('', rightModelOnly, width);
 }
 
 function computeCachePercent(context) {
@@ -481,6 +510,7 @@ export function renderStatusline(
     color = true,
     git = null,
     telemetry = null,
+    usageSummary = null,
     themeOptions = {},
   } = {},
 ) {
@@ -510,8 +540,8 @@ export function renderStatusline(
   }
 
   const lines = [];
-  if (cfg.show.hint || cfg.show.vim || cfg.show.dir || cfg.show.model || cfg.show.git) {
-    const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git);
+  if (cfg.show.hint || cfg.show.vim || cfg.show.dir || cfg.show.model || cfg.show.git || cfg.show.todayTokens || cfg.show.totalTokens) {
+    const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git, usageSummary);
     if (meta) lines.push(meta);
   }
   const metrics = renderMetricsRow(safePayload, width, cfg, palette, useColor, now, {

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
+import { getOrRefreshUsageSummary } from './history-scan.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
@@ -31,6 +32,14 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       enableLedger: config.ledger,
     });
 
+    let usageSummary = null;
+    if (config.show.todayTokens || config.show.totalTokens) {
+      usageSummary = await getOrRefreshUsageSummary({
+        deltaTokens: telemetry.turnTokensDelta || 0,
+        allowScan: config.dbTiming,
+      });
+    }
+
     if (!plain && config.tabTitle) {
       const tab = syncTabTitle(payload, {
         config,
@@ -45,7 +54,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       }
     }
 
-    const rendered = renderStatusline(payload, { config, color, git, telemetry, themeOptions: { env } });
+    const rendered = renderStatusline(payload, { config, color, git, telemetry, usageSummary, themeOptions: { env } });
     stdout.write(`${rendered}\n`);
   } catch {
     const fallback = renderFallback(config, { color });

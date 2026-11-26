@@ -255,6 +255,7 @@ export function recordTelemetry(
   }
 
   const modelName = normalizeModelName(p.model);
+  let turnTokensDelta = 0;
 
   if (outDelta > 0) {
     sessionTurns += 1;
@@ -298,6 +299,7 @@ export function recordTelemetry(
     }
 
     const billedInput = inDelta > 0 ? inDelta : curIn;
+    turnTokensDelta = billedInput + outDelta + curCacheRead + curCacheWrite;
     const est = estimateCost({
       model: modelName,
       input: billedInput,
@@ -414,6 +416,7 @@ export function recordTelemetry(
     sessionCostUsd,
     sessionCacheSavedUsd,
     sessionDurationSec: Math.max(0, Math.round((now - startedAt) / 1000)),
+    turnTokensDelta,
     lastActivityAt,
     conversationTitle,
     customTitle,

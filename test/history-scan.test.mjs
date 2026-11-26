@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import { parseStepUsageMetadata, resolveModelEnum } from '../src/history-scan.mjs';
+import {
+  computeUsageSummary,
+  getOrRefreshUsageSummary,
+  parseStepUsageMetadata,
+  resolveModelEnum,
+  saveUsageSummary,
+} from '../src/history-scan.mjs';
 
 function encodeVarint(n) {
   let v = BigInt(n);
@@ -65,4 +74,32 @@ test('parseStepUsageMetadata extracts model, token counts, thinking tokens, TTFT
 test('parseStepUsageMetadata ignores empty or malformed metadata safely', () => {
   assert.equal(parseStepUsageMetadata(null), null);
   assert.equal(parseStepUsageMetadata(Buffer.from([0xff, 0xff])), null);
+});
+
+test('getOrRefreshUsageSummary returns cached totals and increments live deltas without rescanning', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-usum-'));
+  try {
+    const now = new Date('2026-11-26T12:00:00Z').getTime();
+    const initial = computeUsageSummary(
+      [
+        { ts: now - 3 * 86_400_000, input: 100_000, output: 10_000, cacheRead: 900_000 },
+        { ts: now - 1000, input: 50_000, output: 5_000, cacheRead: 450_000 },
+      ],
+      { now },
+    );
+    assert.equal(initial.todayTokens, 505_000);
+    assert.equal(initial.totalTokens, 1_515_000);
+    saveUsageSummary(initial, { baseDir: dir });
+
+    const bumped = await getOrRefreshUsageSummary({
+      baseDir: dir,
+      now: now + 5000,
+      deltaTokens: 100_000,
+      allowScan: false,
+    });
+    assert.equal(bumped.todayTokens, 605_000);
+    assert.equal(bumped.totalTokens, 1_615_000);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

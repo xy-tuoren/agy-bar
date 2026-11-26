@@ -80,6 +80,22 @@ test('renders workspace dir + git, Vim badge, /compact danger hint, and optional
   assert.match(line2, /12m·8t/);
 });
 
+test('renders minimal DAY and ALL token totals on line 1 and sheds cleanly on narrow terminals', () => {
+  const usageSummary = { todayTokens: 133_600_000, totalTokens: 903_900_000 };
+  const wide = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 120, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { color: false, git: { branch: 'main', dirty: false }, usageSummary },
+  ).split('\n')[0];
+  assert.match(wide, /DAY 133\.6M · ALL 903\.9M │ Gemini 4 Carbon · high$/);
+
+  const narrow = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 52, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { color: false, git: { branch: 'main', dirty: false }, usageSummary },
+  ).split('\n')[0];
+  assert.ok(visibleWidth(narrow) <= 50);
+  assert.ok(!narrow.includes('ALL 903.9M'));
+});
+
 test('dashboard preset renders 2 lines with git, context bar, cache, and Gemini quota', () => {
   const out = renderStatusline(fixtures.geminiNormal, {
     config: normalizeConfig({ preset: 'dashboard', theme: 'slate-dark' }),

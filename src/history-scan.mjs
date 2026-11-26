@@ -114,6 +114,109 @@ export function scanCachePath(baseDir = configDir(homedir())) {
   return join(baseDir, 'scan-cache.json');
 }
 
+export function usageSummaryPath(baseDir = configDir(homedir())) {
+  return join(baseDir, 'usage-summary.json');
+}
+
+function localDateKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function computeUsageSummary(entries, { now = Date.now() } = {}) {
+  const todayKey = localDateKey(now);
+  let todayTokens = 0;
+  let totalTokens = 0;
+  for (const e of entries || []) {
+    const tok = (Number(e.input) || 0) + (Number(e.output) || 0) + (Number(e.cacheRead) || 0) + (Number(e.cacheWrite) || 0);
+    if (tok <= 0) continue;
+    totalTokens += tok;
+    if (typeof e.ts === 'number' && localDateKey(e.ts) === todayKey) {
+      todayTokens += tok;
+    }
+  }
+  return {
+    updatedAt: now,
+    date: todayKey,
+    todayTokens,
+    totalTokens,
+  };
+}
+
+export function readUsageSummary({ baseDir = configDir(homedir()) } = {}) {
+  const path = usageSummaryPath(baseDir);
+  try {
+    if (!existsSync(path)) return null;
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    if (parsed && typeof parsed.totalTokens === 'number' && typeof parsed.todayTokens === 'number') {
+      return parsed;
+    }
+  } catch {
+    // Ignore corrupt summary snapshot.
+  }
+  return null;
+}
+
+export function saveUsageSummary(summary, { baseDir = configDir(homedir()) } = {}) {
+  const path = usageSummaryPath(baseDir);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(summary) + '\n', 'utf8');
+  } catch {
+    // Ignore write failures silently.
+  }
+  return summary;
+}
+
+export async function getOrRefreshUsageSummary({
+  home = homedir(),
+  baseDir = configDir(home),
+  now = Date.now(),
+  maxAgeMs = 5 * 60 * 1000,
+  deltaTokens = 0,
+  allowScan = true,
+  fallbackEntries = null,
+} = {}) {
+  const todayKey = localDateKey(now);
+  const existing = readUsageSummary({ baseDir });
+
+  if (existing && existing.date === todayKey && typeof existing.updatedAt === 'number' && now - existing.updatedAt < maxAgeMs) {
+    if (deltaTokens > 0) {
+      const bumped = {
+        ...existing,
+        todayTokens: existing.todayTokens + deltaTokens,
+        totalTokens: existing.totalTokens + deltaTokens,
+      };
+      return saveUsageSummary(bumped, { baseDir });
+    }
+    return existing;
+  }
+
+  if (allowScan) {
+    const scan = await scanConversationHistory({ home, baseDir, sourceFilter: 'all', useCache: true });
+    if (scan.supported && scan.entries.length > 0) {
+      const summary = computeUsageSummary(scan.entries, { now });
+      return saveUsageSummary(summary, { baseDir });
+    }
+  }
+
+  if (Array.isArray(fallbackEntries) && fallbackEntries.length > 0) {
+    const summary = computeUsageSummary(fallbackEntries, { now });
+    return saveUsageSummary(summary, { baseDir });
+  }
+
+  if (existing) {
+    const rolled = existing.date === todayKey ? existing : { ...existing, date: todayKey, todayTokens: 0, updatedAt: now };
+    if (deltaTokens > 0) {
+      rolled.todayTokens += deltaTokens;
+      rolled.totalTokens += deltaTokens;
+    }
+    return saveUsageSummary(rolled, { baseDir });
+  }
+
+  return null;
+}
+
 function loadScanCache(cacheFile) {
   try {
     if (!existsSync(cacheFile)) return { version: CACHE_SCHEMA_VERSION, files: {} };

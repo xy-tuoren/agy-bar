@@ -144,6 +144,11 @@ export const SAMPLE_TELEMETRY = Object.freeze({
   }),
 });
 
+export const SAMPLE_USAGE_SUMMARY = Object.freeze({
+  todayTokens: 133_600_000,
+  totalTokens: 903_900_000,
+});
+
 export function buildPreviewOutput({
   scenario = 'normal',
   width = 116,
@@ -181,6 +186,7 @@ export function buildPreviewOutput({
       color,
       git,
       telemetry: SAMPLE_TELEMETRY[name],
+      usageSummary: SAMPLE_USAGE_SUMMARY,
     });
     const rule = '─'.repeat(Math.max(12, width - 2));
     blocks.push(
