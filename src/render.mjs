@@ -195,6 +195,102 @@ function formatVimBadge(payload, show, palette, color) {
   return bold(fg(`[${mode}]`, tone, color), color);
 }
 
+export function extractActiveProxyLabel(env = {}) {
+  if (!env || typeof env !== 'object') return null;
+  const raw =
+    env.HTTPS_PROXY ||
+    env.https_proxy ||
+    env.HTTP_PROXY ||
+    env.http_proxy ||
+    env.ALL_PROXY ||
+    env.all_proxy ||
+    '';
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!parsed.hostname) return null;
+    return parsed.port ? parsed.port : 'proxy';
+  } catch {
+    return null;
+  }
+}
+
+export function countRunningSubagents(payload) {
+  const raw = payload?.subagents;
+  if (!raw) return 0;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  if (Array.isArray(raw)) {
+    let count = 0;
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const st = String(item.status || item.state || '').toLowerCase();
+      if (item.running === true || st === 'running' || st === 'working' || st === 'active' || st === 'in_progress') {
+        count += 1;
+      }
+    }
+    return count;
+  }
+  if (typeof raw === 'object') {
+    const n = nonNegNumber(raw.running ?? raw.active);
+    return n !== null ? Math.floor(n) : 0;
+  }
+  return 0;
+}
+
+export function formatTurnElapsed(seconds) {
+  const sec = nonNegNumber(seconds);
+  if (sec === null || sec < 1) return '';
+  const whole = Math.floor(sec);
+  if (whole < 60) return `${whole}s`;
+  const m = Math.floor(whole / 60);
+  const s = whole % 60;
+  if (m < 60) return `${m}m${String(s).padStart(2, '0')}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h${String(rm).padStart(2, '0')}m`;
+}
+
+function formatModeBadges(payload, show, palette, color) {
+  if (!show.mode) return '';
+  const badges = [];
+  const cycleMode = sanitizeText(payload?.cycle_mode || payload?.execution_mode || '').toLowerCase();
+  if (cycleMode === 'plan') {
+    badges.push(bold(fg('PLAN', palette.warn, color), color));
+  }
+  const sandboxOn = payload?.sandbox === true || payload?.sandbox?.enabled === true;
+  if (sandboxOn) {
+    badges.push(bold(fg('SANDBOX', palette.branch, color), color));
+  }
+  return joinWithSep(badges, ' · ', palette, color);
+}
+
+function formatSubagentsBadge(payload, show, palette, color) {
+  if (!show.subagents) return '';
+  const running = countRunningSubagents(payload);
+  if (running <= 0) return '';
+  return bold(fg(`⚡${running}`, palette.accent, color), color);
+}
+
+function formatTurnTimerBadge(isBusy, telemetry, show, palette, color) {
+  if (!isBusy || !show.turnTimer) return '';
+  const sec = nonNegNumber(telemetry?.turnElapsedSec);
+  if (sec === null || sec < 1) return '';
+  const text = formatTurnElapsed(sec);
+  if (!text) return '';
+  if (sec >= 90) return bold(fg(text, palette.danger, color), color);
+  if (sec >= 30) return fg(text, palette.warn, color);
+  return fg(text, palette.muted, color);
+}
+
+function formatProxyBadge(env, show, palette, color) {
+  if (!show.proxy) return '';
+  const label = extractActiveProxyLabel(env);
+  if (!label) return '';
+  return `${fg('↗', palette.good, color)}${fg(label, palette.muted, color)}`;
+}
+
 function formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir = true, maxBranchLen = 22 } = {}) {
   const rawCwd = payload?.workspace?.current_dir || payload?.cwd || '';
   const dirName = withDir && show.dir && rawCwd ? sanitizeText(basename(rawCwd)) : '';
@@ -245,11 +341,15 @@ function formatUsageSummarySegment(
   return joinWithSep(parts, ' · ', palette, color);
 }
 
-function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null) {
+function renderMetaLine(payload, width, config, palette, color, git, usageSummary = null, telemetry = null, env = {}) {
   const { show } = config;
   const isBusy = ['working', 'tool_use', 'thinking'].includes(payload?.agent_state);
   const hintText = show.hint ? (isBusy ? 'esc to cancel' : '? for shortcuts') : '';
   const vimBadge = formatVimBadge(payload, show, palette, color);
+  const modeBadge = formatModeBadges(payload, show, palette, color);
+  const subagentsBadge = formatSubagentsBadge(payload, show, palette, color);
+  const timerBadge = formatTurnTimerBadge(isBusy, telemetry, show, palette, color);
+  const proxyBadge = formatProxyBadge(env, show, palette, color);
   const modelText = show.model ? formatModelName(payload?.model, show.effort) : '';
   const modelSeg = modelText ? fg(modelText, palette.muted, color) : '';
 
@@ -268,11 +368,13 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
   const wsShort = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: true, maxBranchLen: 12 });
   const gitOnly = formatWorkspaceGitSegment(payload, git, show, palette, color, { withDir: false, maxBranchLen: 14 });
   const hintSeg = hintText ? fg(hintText, palette.muted, color) : '';
+  const statusSeg = joinWithSep([hintSeg, timerBadge], ' · ', palette, color);
 
-  const leftFull = joinWithSep([vimBadge, hintSeg, wsFull], ' · ', palette, color);
-  const leftShort = joinWithSep([vimBadge, hintSeg, wsShort], ' · ', palette, color);
-  const leftCompact = joinWithSep([vimBadge, wsShort || gitOnly || hintSeg], ' · ', palette, color);
-  const leftMinimal = vimBadge || gitOnly || hintSeg;
+  const leftFull = joinWithSep([vimBadge, modeBadge, subagentsBadge, statusSeg, wsFull, proxyBadge], ' · ', palette, color);
+  const leftShort = joinWithSep([vimBadge, modeBadge, subagentsBadge, statusSeg, wsShort, proxyBadge], ' · ', palette, color);
+  const leftNoProxy = joinWithSep([vimBadge, modeBadge, subagentsBadge, statusSeg, wsShort], ' · ', palette, color);
+  const leftCompact = joinWithSep([vimBadge, modeBadge, subagentsBadge, timerBadge, wsShort || gitOnly || hintSeg], ' · ', palette, color);
+  const leftMinimal = vimBadge || modeBadge || subagentsBadge || timerBadge || gitOnly || hintSeg;
 
   const pairs = [
     [leftFull, rightFull],
@@ -285,6 +387,7 @@ function renderMetaLine(payload, width, config, palette, color, git, usageSummar
     [leftShort, rightDayOnly],
     [leftFull, rightModelOnly],
     [leftShort, rightModelOnly],
+    [leftNoProxy, rightModelOnly],
     [leftCompact, rightModelOnly],
     [leftMinimal, rightModelOnly],
     ['', rightModelOnly],
@@ -534,6 +637,7 @@ export function renderStatusline(
     git = null,
     telemetry = null,
     usageSummary = null,
+    env = {},
     themeOptions = {},
   } = {},
 ) {
@@ -566,6 +670,10 @@ export function renderStatusline(
   if (
     cfg.show.hint ||
     cfg.show.vim ||
+    cfg.show.mode ||
+    cfg.show.subagents ||
+    cfg.show.turnTimer ||
+    cfg.show.proxy ||
     cfg.show.dir ||
     cfg.show.model ||
     cfg.show.git ||
@@ -574,7 +682,7 @@ export function renderStatusline(
     cfg.show.monthTokens ||
     cfg.show.totalTokens
   ) {
-    const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git, usageSummary);
+    const meta = renderMetaLine(safePayload, width, cfg, palette, useColor, git, usageSummary, telemetry, env);
     if (meta) lines.push(meta);
   }
   const metrics = renderMetricsRow(safePayload, width, cfg, palette, useColor, now, {

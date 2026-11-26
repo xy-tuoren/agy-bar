@@ -54,7 +54,15 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       }
     }
 
-    const rendered = renderStatusline(payload, { config, color, git, telemetry, usageSummary, themeOptions: { env } });
+    const rendered = renderStatusline(payload, {
+      config,
+      color,
+      git,
+      telemetry,
+      usageSummary,
+      env,
+      themeOptions: { env },
+    });
     stdout.write(`${rendered}\n`);
   } catch {
     const fallback = renderFallback(config, { color });

@@ -44,8 +44,26 @@ test('tracks turn speed (tok/s), 5-min cache TTL countdown, context delta, and a
     );
     assert.equal(r1.speedTokPerSec, null);
     assert.equal(r1.cacheRemainingSec, 300);
+    assert.equal(r1.turnElapsedSec, 0);
 
-    // 10 seconds later, agent finishes producing 1,500 output tokens -> 150 tok/s.
+    // 4 seconds into the turn while still working -> live turnElapsedSec ticks up.
+    const r1Mid = recordTelemetry(
+      {
+        ...basePayload,
+        agent_state: 'working',
+        context_window: {
+          context_window_size: 1_000_000,
+          used_percentage: 10.0,
+          total_input_tokens: 10000,
+          total_output_tokens: 0,
+          current_usage: { input_tokens: 10000, output_tokens: 0, cache_read_input_tokens: 0 },
+        },
+      },
+      { now: t0 + 4_200, baseDir: dir, git: { branch: 'main', dirty: false } },
+    );
+    assert.equal(r1Mid.turnElapsedSec, 4);
+
+    // 10 seconds later, agent finishes producing 1,500 output tokens -> 150 tok/s, turnElapsedSec clears on idle.
     const r2 = recordTelemetry(
       {
         ...basePayload,
@@ -60,6 +78,7 @@ test('tracks turn speed (tok/s), 5-min cache TTL countdown, context delta, and a
       },
       { now: t0 + 10_000, baseDir: dir, git: { branch: 'main', dirty: true } },
     );
+    assert.equal(r2.turnElapsedSec, null);
     assert.equal(r2.speedTokPerSec, 150);
     assert.equal(r2.turnDurationMs, 10_000);
     assert.equal(r2.contextDelta, 25_000);

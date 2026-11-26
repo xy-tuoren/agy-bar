@@ -4,7 +4,16 @@ import test from 'node:test';
 import { stripAnsi, visibleWidth } from '../src/ansi.mjs';
 import { normalizeConfig } from '../src/config.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
-import { formatReset, formatTokens, formatTtft, renderBar, renderStatusline } from '../src/render.mjs';
+import {
+  countRunningSubagents,
+  extractActiveProxyLabel,
+  formatReset,
+  formatTokens,
+  formatTtft,
+  formatTurnElapsed,
+  renderBar,
+  renderStatusline,
+} from '../src/render.mjs';
 
 const fixtures = JSON.parse(
   readFileSync(new URL('./fixtures/payloads.json', import.meta.url), 'utf8'),
@@ -246,4 +255,52 @@ test('renders Gemini 4 Neon, 5-min cache TTL countdown, tok/s speed, context del
   // and danger red RGB (248;113;113) triggered on 25s cache TTL.
   assert.ok(out.includes('\x1b[38;2;251;191;36m'));
   assert.ok(out.includes('\x1b[38;2;248;113;113m'));
+});
+
+test('renders active proxy badge and on-demand work-state badges (turn timer, subagents, PLAN/SANDBOX)', () => {
+  assert.equal(extractActiveProxyLabel({ HTTPS_PROXY: 'http://user:pass@127.0.0.1:7897' }), '7897');
+  assert.equal(extractActiveProxyLabel({ HTTP_PROXY: 'http://proxy.internal' }), 'proxy');
+  assert.equal(extractActiveProxyLabel({}), null);
+
+  assert.equal(countRunningSubagents({ subagents: [{ status: 'running' }, { status: 'completed' }, { status: 'working' }] }), 2);
+  assert.equal(countRunningSubagents({ subagents: [{ status: 'completed' }] }), 0);
+  assert.equal(countRunningSubagents({ subagents: { running: 3 } }), 3);
+
+  assert.equal(formatTurnElapsed(0), '');
+  assert.equal(formatTurnElapsed(24), '24s');
+  assert.equal(formatTurnElapsed(75), '1m15s');
+
+  // Idle without proxy/subagents/special mode shows none of these badges (zero clutter).
+  const idleLine = renderStatusline(
+    { ...fixtures.geminiNormal, terminal_width: 130, workspace: { current_dir: '/Users/dev/agy-bar' } },
+    { color: false, git: { branch: 'main', dirty: false }, telemetry: { turnElapsedSec: 40 }, env: {} },
+  ).split('\n')[0];
+  assert.ok(!idleLine.includes('↗'));
+  assert.ok(!idleLine.includes('⚡'));
+  assert.ok(!idleLine.includes('PLAN'));
+  assert.ok(!idleLine.includes('SANDBOX'));
+  assert.ok(!idleLine.includes('40s'));
+
+  // Busy with proxy, running subagents, PLAN + SANDBOX, and live turn timer shows all badges cleanly.
+  const activeOut = renderStatusline(
+    {
+      ...fixtures.geminiCritical,
+      terminal_width: 140,
+      workspace: { current_dir: '/Users/dev/agy-bar' },
+      cycle_mode: 'plan',
+      sandbox: { enabled: true },
+      subagents: [{ status: 'running' }, { status: 'running' }, { status: 'completed' }],
+    },
+    {
+      color: true,
+      git: { branch: 'main', dirty: true },
+      telemetry: { turnElapsedSec: 95 },
+      env: { HTTPS_PROXY: 'http://alice:secret@127.0.0.1:7897' },
+    },
+  );
+  const activeLine1 = stripAnsi(activeOut.split('\n')[0]);
+  assert.match(activeLine1, /PLAN · SANDBOX · ⚡2 · esc to cancel · 1m35s · agy-bar \(main\*\) · ↗7897/);
+  // Credentials must never leak into the rendered proxy badge.
+  assert.ok(!activeLine1.includes('secret'));
+  assert.ok(!activeLine1.includes('alice'));
 });

@@ -110,6 +110,7 @@ const darkNormal = renderStatusline(
     git: { branch: 'main', dirty: false },
     telemetry: SAMPLE_TELEMETRY.normal,
     usageSummary: SAMPLE_USAGE_SUMMARY,
+    env: { HTTPS_PROXY: 'http://127.0.0.1:7897' },
   },
 ).split('\n');
 

@@ -36,7 +36,7 @@ agy-bar <command>   # installed at ~/.local/bin/agy-bar (or: node ~/.gemini/conf
 
 ## Toggleable Items
 
-`hint`, `vim`, `dir`, `model`, `effort`, `git`, `gitDirty`, `context`, `contextBar`, `contextDelta`, `compactHint`, `capacity`, `cache`, `cacheTtl`, `ttft`, `speed`, `cost`, `session`, `todayTokens`, `weekTokens`, `monthTokens`, `totalTokens`, `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset`
+`hint`, `vim`, `mode`, `subagents`, `turnTimer`, `proxy`, `dir`, `model`, `effort`, `git`, `gitDirty`, `context`, `contextBar`, `contextDelta`, `compactHint`, `capacity`, `cache`, `cacheTtl`, `ttft`, `speed`, `cost`, `session`, `todayTokens`, `weekTokens`, `monthTokens`, `totalTokens`, `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset`
 
 ## Workflow
 

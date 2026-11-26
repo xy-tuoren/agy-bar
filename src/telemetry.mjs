@@ -346,6 +346,9 @@ export function recordTelemetry(
     turnFirstTokenAt = null;
   }
 
+  const turnElapsedSec =
+    isBusy && turnStartedAt !== null && now >= turnStartedAt ? Math.floor((now - turnStartedAt) / 1000) : null;
+
   const cwd = p.workspace?.current_dir || p.cwd || prev?.cwd || null;
   const cacheTtlMs = Math.max(30, cacheTtlSec) * 1000;
   const cacheRemainingSec =
@@ -411,6 +414,7 @@ export function recordTelemetry(
     ttftMs: lastTtftMs,
     speedTokPerSec: lastSpeedTokPerSec,
     turnDurationMs: lastTurnDurationMs,
+    turnElapsedSec,
     contextDelta: lastContextDelta,
     sessionTurns,
     sessionCostUsd,

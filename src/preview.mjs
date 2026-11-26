@@ -33,6 +33,12 @@ export const SAMPLE_PAYLOADS = Object.freeze({
     terminal_width: 116,
     workspace: { current_dir: '/Users/dev/agy-bar' },
     vim: { mode: 'NORMAL' },
+    cycle_mode: 'plan',
+    subagents: Object.freeze([
+      Object.freeze({ id: 'a1', status: 'running' }),
+      Object.freeze({ id: 'a2', status: 'running' }),
+      Object.freeze({ id: 'a3', status: 'completed' }),
+    ]),
     model: {
       id: 'gemini-4-carbon',
       display_name: 'Gemini 4 Carbon (High)',
@@ -119,6 +125,7 @@ export const SAMPLE_TELEMETRY = Object.freeze({
     cacheRemainingSec: 68,
     ttftMs: 8400,
     speedTokPerSec: 112,
+    turnElapsedSec: 34,
     contextDelta: 34800,
     sessionCostUsd: 0.84,
     sessionTurns: 14,
@@ -128,6 +135,7 @@ export const SAMPLE_TELEMETRY = Object.freeze({
     cacheRemainingSec: 18,
     ttftMs: 16200,
     speedTokPerSec: 64,
+    turnElapsedSec: 96,
     contextDelta: 61200,
     sessionCostUsd: 2.35,
     sessionTurns: 28,
@@ -189,6 +197,7 @@ export function buildPreviewOutput({
       git,
       telemetry: SAMPLE_TELEMETRY[name],
       usageSummary: SAMPLE_USAGE_SUMMARY,
+      env: name === 'normal' ? { HTTPS_PROXY: 'http://127.0.0.1:7897' } : {},
     });
     const rule = '─'.repeat(Math.max(12, width - 2));
     blocks.push(

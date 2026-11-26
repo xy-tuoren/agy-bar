@@ -2,6 +2,15 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.8.0] - 2026-11-26
+
+### Added
+- **Active Proxy Micro-Badge (`show.proxy`, e.g. `↗7897`)**: Reads `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` directly from process memory (`0ms`, zero network, credentials never exposed) and shows a compact green-arrow port badge (`↗7897`) on line 1 whenever a session is running through a proxy — hidden automatically when running direct.
+- **Zero-Clutter On-Demand Work-State Badges (hidden when idle)**:
+  - **Live Turn Elapsed Timer (`show.turnTimer`)**: Shows elapsed time right next to `esc to cancel` while the agent is busy (`24s`, `1m15s`), shifting amber at `>= 30s` and bold red at `>= 90s`.
+  - **Running Subagents Counter (`show.subagents`)**: Displays `⚡N` on line 1 whenever background subagents are actively running (`payload.subagents`).
+  - **Special Execution Mode Badges (`show.mode`)**: Lights up `PLAN` (amber) or `SANDBOX` (purple) on line 1 only when active so you never lose track of non-default modes.
+
 ## [0.7.3] - 2026-11-26
 
 ### Added
