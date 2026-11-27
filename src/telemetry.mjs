@@ -158,8 +158,10 @@ function pickQuotaSnapshot(quota) {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-export function resolveSessionTitles(payload = {}, prev = null) {
-  const conversationTitle = sanitizeText(payload?.conversation_title || '') || prev?.conversationTitle || null;
+export function resolveSessionTitles(payload = {}, prev = null, { dbTitle = null } = {}) {
+  const payloadTitle = sanitizeText(payload?.conversation_title || '') || null;
+  const fallbackDbTitle = sanitizeText(dbTitle || '') || null;
+  const conversationTitle = payloadTitle || fallbackDbTitle || prev?.conversationTitle || null;
   // If user explicitly renamed the conversation via /rename (conversation_title changed),
   // clear any older custom tab override automatically.
   let customTitle = prev?.customTitle || null;
@@ -167,6 +169,9 @@ export function resolveSessionTitles(payload = {}, prev = null) {
   if (customTitle && conversationTitle && customTitleBase && conversationTitle !== customTitleBase) {
     customTitle = null;
     customTitleBase = null;
+  } else if (customTitle && !customTitleBase && !payloadTitle && fallbackDbTitle) {
+    // Anchor customTitleBase once AGY's initial background summary lands so a later /rename still supersedes it.
+    customTitleBase = fallbackDbTitle;
   }
   return { conversationTitle, customTitle, customTitleBase };
 }
@@ -177,6 +182,7 @@ export function recordTelemetry(
     now = Date.now(),
     git = null,
     stepTiming = null,
+    summaryTitle = null,
     prevSession = undefined,
     tabSync = null,
     baseDir = configDir(homedir()),
@@ -390,7 +396,9 @@ export function recordTelemetry(
   const cacheRemainingSec =
     lastActivityAt !== null ? Math.max(0, Math.round((cacheTtlMs - (now - lastActivityAt)) / 1000)) : null;
 
-  const { conversationTitle, customTitle, customTitleBase } = resolveSessionTitles(p, prev);
+  const { conversationTitle, customTitle, customTitleBase } = resolveSessionTitles(p, prev, {
+    dbTitle: summaryTitle?.title ?? null,
+  });
   const tabWritten = Boolean(tabSync?.written && tabSync.title);
   const nextTabTitle = tabWritten ? tabSync.title : prev?.lastTabTitle || null;
   const nextTabHostPid = tabWritten
@@ -418,6 +426,8 @@ export function recordTelemetry(
     gitRemoved: typeof git?.removed === 'number' ? git.removed : prev?.gitRemoved ?? null,
     gitCheckedAt: git?.dirtyChecked ? now : prev?.gitCheckedAt ?? null,
     dbStamp: stepTiming?.dbStamp ?? prev?.dbStamp ?? null,
+    summaryDbStamp: summaryTitle?.dbStamp ?? prev?.summaryDbStamp ?? null,
+    summaryTitleCheckedAt: summaryTitle?.checkedAt ?? prev?.summaryTitleCheckedAt ?? null,
     agentState: sanitizeText(p.agent_state || '') || 'idle',
     activityKind: activity.kind,
     needsAttention: activity.needsAttention,

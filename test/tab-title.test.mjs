@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { readConversationSummaryTitle } from '../src/step-timing.mjs';
 import {
   buildTabTitle,
   compactTitleText,
@@ -299,5 +300,115 @@ test('native AGY title command renders single-line state titles, respects custom
     assert.equal(targeted.customTitle, '锁定本标签');
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('falls back to AGY conversation_summaries.db title on new conversations and preserves early customTitle', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-sumtitle-'));
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-sumhome-'));
+  try {
+    const convId = 'a445b358-ff85-43df-bbfa-77b1fbefcf4b';
+    const t0 = 1_795_768_000_000;
+
+    // 1. Anchoring customTitleBase when initial DB summary arrives after an early customTitle.
+    recordTelemetry({ conversation_id: convId, agent_state: 'working' }, { now: t0, baseDir: dir });
+    setSessionCustomTitle('标签页标题优化', { sessionId: convId, baseDir: dir, now: t0 + 100 });
+    const afterDbArrives = recordTelemetry(
+      { conversation_id: convId, agent_state: 'idle' },
+      {
+        now: t0 + 2000,
+        baseDir: dir,
+        summaryTitle: { title: 'Version 1.0 Release Status', dbStamp: '1:100:0:0', checkedAt: t0 + 2000 },
+      },
+    );
+    // Initial background summary must NOT clobber the user/agent's customTitle.
+    assert.equal(afterDbArrives.customTitle, '标签页标题优化');
+    assert.equal(afterDbArrives.conversationTitle, 'Version 1.0 Release Status');
+
+    // A subsequent /rename changes conversation_title relative to the anchored base -> supersedes customTitle.
+    const afterRename = recordTelemetry(
+      { conversation_id: convId, conversation_title: '发布后排查', agent_state: 'idle' },
+      { now: t0 + 5000, baseDir: dir },
+    );
+    assert.equal(afterRename.customTitle, null);
+    assert.equal(afterRename.conversationTitle, '发布后排查');
+
+    // 2. Live SQLite fallback in readConversationSummaryTitle + renderNativeTitle (Node >= 22.13).
+    let DatabaseSync = null;
+    try {
+      ({ DatabaseSync } = await import('node:sqlite'));
+    } catch {
+      DatabaseSync = null;
+    }
+    if (DatabaseSync) {
+      const agyDir = join(fakeHome, '.gemini', 'antigravity-cli');
+      mkdirSync(agyDir, { recursive: true });
+      const dbPath = join(agyDir, 'conversation_summaries.db');
+      const db = new DatabaseSync(dbPath);
+      db.exec('CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT "")');
+      db.prepare('INSERT INTO conversation_summaries VALUES (?, ?)').run(convId, '项目代码分析与解读');
+      db.close();
+
+      const freshDir = mkdtempSync(join(tmpdir(), 'agy-bar-sumtitle-live-'));
+      try {
+        // Brand-new conversation payload omits conversation_title -> renderNativeTitle resolves DB title automatically.
+        const resolved = renderNativeTitle(
+          { conversation_id: convId, agent_state: 'idle', workspace: { current_dir: '/Users/dev/agy-bar' } },
+          {
+            config: { tabTitle: true, tabTitleSource: 'auto', tabTitleMaxLen: 26, dbTiming: true },
+            home: fakeHome,
+            baseDir: freshDir,
+            now: t0,
+            hostPid: 51515,
+          },
+        );
+        assert.equal(resolved, '✓ 项目代码分析与解读');
+
+        // Opting out via dbTiming: false falls back to workspace dir without opening SQLite.
+        const optOut = renderNativeTitle(
+          { conversation_id: convId, agent_state: 'idle', workspace: { current_dir: '/Users/dev/agy-bar' } },
+          {
+            config: { tabTitle: true, tabTitleSource: 'auto', tabTitleMaxLen: 26, dbTiming: false },
+            home: fakeHome,
+            baseDir: freshDir,
+            now: t0,
+            hostPid: 51515,
+          },
+        );
+        assert.equal(optOut, '✓ agy-bar');
+
+        // Matching dbStamp skips SQLite completely; recheckIntervalMs throttles repeated WAL writes once title is known.
+        const first = readConversationSummaryTitle(convId, { home: fakeHome, now: t0 });
+        assert.equal(first.title, '项目代码分析与解读');
+        assert.equal(first.unchanged, false);
+
+        const sameStamp = readConversationSummaryTitle(convId, {
+          home: fakeHome,
+          prevDbStamp: first.dbStamp,
+          prevTitle: first.title,
+          prevCheckedAt: t0,
+          now: t0 + 60_000,
+        });
+        assert.equal(sameStamp.unchanged, true);
+        assert.equal(sameStamp.title, '项目代码分析与解读');
+
+        writeFileSync(`${dbPath}-wal`, 'simulated-wal-activity');
+        const throttled = readConversationSummaryTitle(convId, {
+          home: fakeHome,
+          prevDbStamp: first.dbStamp,
+          prevTitle: first.title,
+          prevCheckedAt: t0,
+          now: t0 + 3_000,
+          recheckIntervalMs: 15_000,
+        });
+        assert.equal(throttled.unchanged, true);
+        assert.equal(throttled.title, '项目代码分析与解读');
+      } finally {
+        rmSync(freshDir, { recursive: true, force: true });
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
   }
 });

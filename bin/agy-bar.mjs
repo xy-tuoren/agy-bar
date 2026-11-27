@@ -64,6 +64,7 @@ import {
 } from '../src/shell-hook.mjs';
 import { aggregateStats, formatStatsReport, HEATMAP_PALETTE_NAMES, PERIOD_NAMES, readLedger, SOURCE_NAMES } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
+import { readConversationSummaryTitle } from '../src/step-timing.mjs';
 import { buildTabTitle, resolveTerminalTarget, writeOscTitle } from '../src/tab-title.mjs';
 import {
   armPayloadCapture,
@@ -452,13 +453,22 @@ export async function main(argv = process.argv.slice(2)) {
         return;
       }
       const nativeTitleActive = isNativeTitleActive(target.sessionId, { hostPid: hostPid ?? process.ppid });
+      const resolvedConvTitle =
+        target.conversationTitle ||
+        (cfg.dbTiming !== false
+          ? readConversationSummaryTitle(target.sessionId, {
+              prevDbStamp: target.summaryDbStamp ?? null,
+              prevTitle: target.conversationTitle ?? null,
+              recheckIntervalMs: 0,
+            })?.title || null
+          : null);
       const computedTitle = buildTabTitle(
         {
           agent_state: target.agentState,
           subagents: target.runningSubagents || 0,
           task_count: target.runningTasks || 0,
           tool_confirmation_pending: Boolean(target.toolConfirmationPending),
-          conversation_title: target.conversationTitle,
+          conversation_title: resolvedConvTitle,
           cwd: target.cwd,
         },
         {
@@ -475,7 +485,7 @@ export async function main(argv = process.argv.slice(2)) {
             nativeTitleActive,
             source: cfg.tabTitleSource,
             customTitle: target.customTitle || null,
-            conversationTitle: target.conversationTitle || null,
+            conversationTitle: resolvedConvTitle,
             activeTabTitle: (nativeTitleActive ? computedTitle : target.lastTabTitle || computedTitle) || null,
           },
           null,
@@ -491,13 +501,22 @@ export async function main(argv = process.argv.slice(2)) {
       hostPid,
       clear: Boolean(flags.clear),
     });
+    const resolvedConvTitle =
+      updated.conversationTitle ||
+      (cfg.dbTiming !== false
+        ? readConversationSummaryTitle(updated.sessionId, {
+            prevDbStamp: updated.summaryDbStamp ?? null,
+            prevTitle: updated.conversationTitle ?? null,
+            recheckIntervalMs: 0,
+          })?.title || null
+        : null);
     const renderedTitle = buildTabTitle(
       {
         agent_state: updated.agentState,
         subagents: updated.runningSubagents || 0,
         task_count: updated.runningTasks || 0,
         tool_confirmation_pending: Boolean(updated.toolConfirmationPending),
-        conversation_title: updated.conversationTitle,
+        conversation_title: resolvedConvTitle,
         cwd: updated.cwd,
       },
       {

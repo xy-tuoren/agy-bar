@@ -1,8 +1,21 @@
 import { existsSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const UUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+let cachedDatabaseSync;
+function loadDatabaseSync() {
+  if (cachedDatabaseSync !== undefined) return cachedDatabaseSync;
+  try {
+    const req = createRequire(import.meta.url);
+    cachedDatabaseSync = req('node:sqlite').DatabaseSync || null;
+  } catch {
+    cachedDatabaseSync = null;
+  }
+  return cachedDatabaseSync;
+}
 
 export function decodePbFields(buf) {
   const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
@@ -151,6 +164,70 @@ export async function readLatestStepTiming(payload, { home = homedir(), prevDbSt
       .get();
     const parsed = row ? parseStepTimingMetadata(row.metadata, row.idx) : null;
     return parsed ? { ...parsed, dbStamp } : dbStamp ? { unchanged: false, dbStamp } : null;
+  } catch {
+    // Gracefully fall back on Node < 22.13, locked DBs, or schema changes.
+    return null;
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // Ignore close errors.
+    }
+  }
+}
+
+export function summaryDbPath(home = homedir()) {
+  return join(home, '.gemini', 'antigravity-cli', 'conversation_summaries.db');
+}
+
+// Reads ONLY the generated title column for the active conversation from AGY's local
+// conversation_summaries.db (never reads previews, prompts, or replies) when AGY CLI
+// omits conversation_title from live payloads on brand-new conversations.
+export function readConversationSummaryTitle(
+  payload,
+  {
+    home = homedir(),
+    dbPath = null,
+    prevDbStamp = null,
+    prevTitle = null,
+    prevCheckedAt = null,
+    now = Date.now(),
+    recheckIntervalMs = 15_000,
+  } = {},
+) {
+  const id = typeof payload === 'string' ? payload : payload?.conversation_id || payload?.session_id;
+  if (typeof id !== 'string' || !UUID_RE.test(id)) return null;
+
+  const targetDb = dbPath || summaryDbPath(home);
+  if (!existsSync(targetDb)) return null;
+
+  const dbStamp = getDbVersionStamp(targetDb);
+  if (prevDbStamp && dbStamp && dbStamp === prevDbStamp) {
+    return { title: prevTitle || null, unchanged: true, dbStamp, checkedAt: prevCheckedAt ?? now };
+  }
+
+  // Once we already have a title for this session, throttle re-checks while other chats write to the shared WAL.
+  if (
+    prevTitle &&
+    recheckIntervalMs > 0 &&
+    typeof prevCheckedAt === 'number' &&
+    now >= prevCheckedAt &&
+    now - prevCheckedAt < recheckIntervalMs
+  ) {
+    return { title: prevTitle, unchanged: true, dbStamp: prevDbStamp || dbStamp, checkedAt: prevCheckedAt };
+  }
+
+  const DatabaseSync = loadDatabaseSync();
+  if (!DatabaseSync) return null;
+
+  let db;
+  try {
+    db = new DatabaseSync(targetDb, { readOnly: true });
+    const row = db
+      .prepare('SELECT title FROM conversation_summaries WHERE conversation_id = ? LIMIT 1')
+      .get(id);
+    const raw = typeof row?.title === 'string' ? row.title.trim() : '';
+    return { title: raw || null, unchanged: false, dbStamp, checkedAt: now };
   } catch {
     // Gracefully fall back on Node < 22.13, locked DBs, or schema changes.
     return null;

@@ -2,6 +2,15 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [1.0.1] - 2026-11-27
+
+### Fixed & Improved
+- **Automatic Summary Tab Titles on Brand-New Conversations (`src/step-timing.mjs`, `src/title.mjs`, `src/statusline.mjs`, `src/telemetry.mjs`, `bin/agy-bar.mjs`)**:
+  - When Antigravity CLI omits `conversation_title` from live `statusLine`/`title` JSON payloads on newly started sessions (even after AGY's background summarizer has already generated a title), `agy-bar` now falls back to reading only the current session's `title` column from local `~/.gemini/antigravity-cli/conversation_summaries.db` in `readOnly: true` mode (Node `>= 22.13`, zero chat text read, respects `dbTiming: false`).
+  - Uses `.db`/`.db-wal` `mtime` stamp caching plus a 15s recheck throttle once populated so idle and active hot paths remain near-zero overhead, emits a one-shot tab update if the initial summary lands after turn 1 goes idle, and anchors `customTitleBase` so early `agy-bar title` overrides are preserved while later `/rename` actions still supersede them cleanly.
+- **Documentation (`README.md`, `README.zh-CN.md`)**:
+  - Updated the global rules path in the automatic topic-summarization tip to Antigravity's official global file `~/.gemini/AGENTS.md`.
+
 ## [1.0.0] - 2026-11-27
 
 First stable release of **agy-bar** — zero-dependency statusline HUD, native AGY window/tab title hook, no-TUN local proxy launcher, 52-week token heatmap, live 3-tier pricing cache, and multi-CLI monitor for Antigravity CLI (`agy`).

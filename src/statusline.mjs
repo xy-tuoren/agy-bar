@@ -2,13 +2,14 @@ import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyAgentActivity, extractNativeCostUsd } from './agent-state.mjs';
+import { sanitizeText } from './ansi.mjs';
 import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { getOrRefreshUsageSummary } from './history-scan.mjs';
 import { maybeTriggerBackgroundPricingSync } from './pricing-sync.mjs';
 import { extractAccountKey, syncSharedQuota } from './quota-sync.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
-import { readLatestStepTiming } from './step-timing.mjs';
+import { readConversationSummaryTitle, readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
 import { deriveSessionId, maybeCaptureRedactedPayload, peekSessionState, recordTelemetry, resolveSessionTitles } from './telemetry.mjs';
 import { isNativeTitleActive } from './title.mjs';
@@ -57,14 +58,35 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
           })
         : null;
 
+    const hasPayloadTitle = Boolean(sanitizeText(effectivePayload?.conversation_title || ''));
+    const summaryTitle =
+      config.tabTitle && !hasPayloadTitle && config.tabTitleSource !== 'dir' && config.dbTiming !== false
+        ? readConversationSummaryTitle(effectivePayload, {
+            prevDbStamp: prevSession?.summaryDbStamp ?? null,
+            prevTitle: prevSession?.conversationTitle ?? null,
+            prevCheckedAt: prevSession?.summaryTitleCheckedAt ?? null,
+            now,
+            recheckIntervalMs: 15_000,
+          })
+        : null;
+    const { conversationTitle, customTitle } = resolveSessionTitles(effectivePayload, prevSession, {
+      dbTitle: summaryTitle?.title ?? null,
+    });
+    const payloadForTitle =
+      conversationTitle && !hasPayloadTitle
+        ? { ...effectivePayload, conversation_title: conversationTitle }
+        : effectivePayload;
+
     // Sync terminal tab title synchronously before async DB scans when AGY's native
-    // `settings.json.title` hook is not already driving this session's title.
+    // `settings.json.title` hook is not already driving this session's title, OR as a
+    // one-shot push the moment a brand-new conversation's initial summary title lands.
     let tabSync = null;
     if (!plain && config.tabTitle) {
       const sessionIdForTitle = deriveSessionId(effectivePayload);
-      if (!isNativeTitleActive(sessionIdForTitle, { now, hostPid: process.ppid })) {
-        const { customTitle } = resolveSessionTitles(effectivePayload, prevSession);
-        tabSync = syncTabTitle(effectivePayload, {
+      const nativeActive = isNativeTitleActive(sessionIdForTitle, { now, hostPid: process.ppid });
+      const newlyDiscoveredDbTitle = Boolean(!hasPayloadTitle && !prevSession?.conversationTitle && conversationTitle && !customTitle);
+      if (!nativeActive || newlyDiscoveredDbTitle) {
+        tabSync = syncTabTitle(payloadForTitle, {
           config,
           git,
           customTitle,
@@ -72,6 +94,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
           prevTabHostPid: prevSession?.lastTabHostPid ?? null,
           prevTabTty: prevSession?.lastTabTty || null,
           hostPidHint: process.ppid,
+          force: nativeActive && newlyDiscoveredDbTitle,
           resolveOpts: { env },
         });
       }
@@ -84,6 +107,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       now,
       git,
       stepTiming,
+      summaryTitle,
       prevSession,
       tabSync,
       cacheTtlSec: config.cacheTtlSec,

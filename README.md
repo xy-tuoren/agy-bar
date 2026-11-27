@@ -83,16 +83,16 @@ Running 3–5 `agy` sessions across different repos? Open `agy-bar monitor` in a
 
 ### 5. Automatic Terminal Tab Titles (`●` / `● [N]` / `?` / `✓`) & Agent Summarization (`agy-bar title`)
 
-Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, Windows Terminal, and VS Code using **Antigravity CLI's official `title` hook** (`settings.json` → `title`, with automatic OSC 0/2 fallback for older sessions) to show live activity state (`●` working, `● [N]` running subagents, `?` waiting for user input/confirmation, `✗` error, `✓` truly idle) + concise topic title (zero extra tokens, full macOS / Linux / Windows support):
+Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, Windows Terminal, and VS Code using **Antigravity CLI's official `title` hook** (`settings.json` → `title`, with automatic OSC 0/2 fallback for older sessions) to show live activity state (`●` working, `● [N]` running subagents, `?` waiting for user input/confirmation, `✗` error, `✓` truly idle) + concise topic title (automatically picking up AGY's generated summary title even on brand-new conversations, zero extra tokens, full macOS / Linux / Windows support):
 
 ![agy-bar live Ghostty tab titles comparison](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
 
 <sub>Real Ghostty tab bar: auto-synced tabs (`● agy-bar 开源状态栏`, `📊 agy-bar Token 热力图`) right next to an unmodified default `agy --dangerously-skip-per...` tab.</sub>
 
 > **Pro Tip — Auto-summarize tab titles on topic shifts (~10 tokens, zero extra API calls)**
-> Add this one line to your global `~/.gemini/antigravity-cli/AGENTS.md`:
+> Add this one line to your global `~/.gemini/AGENTS.md`:
 > ```text
-> When the user starts a clearly new task/topic in a long session, silently run `agy-bar title "<4-8 word concise topic>"` once to keep the terminal tab title up to date.
+> In Antigravity CLI (`agy`) sessions, when starting a clear task or switching to a new topic in a long session, silently run `agy-bar title "<4-8 word concise topic>"` once to keep the terminal tab title up to date.
 > ```
 > *Ghostty tip*: prefer `agy-bar title "..."` over right-clicking **Change Title…** in Ghostty, which sets a manual `tabOverride` and blocks dynamic `●` / `✓` updates until cleared.
 
@@ -103,7 +103,7 @@ Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTe
 | Guarantee | How It Works |
 | --- | --- |
 | **100% Official `statusLine` + `title` Hooks** | Zero binary patching, zero Electron injection, zero Google/AGY private API calls, zero account credential access. Survives every AGY update cleanly. |
-| **Read-Only Local Telemetry** | SQLite conversation scans (`Node >= 22.13`) open DBs in `readOnly: true` mode and extract **only numeric timestamps & token counts** — never prompts or replies. |
+| **Read-Only Local Telemetry** | SQLite scans (`Node >= 22.13`) open local AGY DBs in `readOnly: true` mode and extract **only numeric timestamps, token counts, subagent parent IDs, and the session's own `title` metadata** — never prompts or replies. |
 | **Transparent Network Policy** | Statusline rendering itself **never touches the network**. Only an optional 24-hour background sync fetches public unauthenticated pricing JSON (`models.dev` / `LiteLLM`); run `agy-bar config set pricingAutoSync off` for strict offline mode. |
 | **Zero-Dep Fast Hot Path** | `0` runtime dependencies, zero-subprocess idle refreshes (PID fast-path + 3s Git cache + SQLite `mtime` skip + 5-min Windows theme cache), and atomic file writes across concurrent terminals. |
 
@@ -226,7 +226,7 @@ eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
 ## Development
 
 ```sh
-npm test            # Cross-platform Node.js built-in test suite (87 tests)
+npm test            # Cross-platform Node.js built-in test suite (88 tests)
 npm run preview     # Render live terminal preview
 npm run preview:svg # Regenerate all 5 showcase SVGs in assets/
 npm run stats       # Show local usage stats

@@ -83,16 +83,16 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 
 ### 5. 终端标签页标题自动同步 (`●` / `● [N]` / `?` / `✓`) 与 Agent 摘要 (`agy-bar title`)
 
-彻底告别多开时所有标签页都叫 `agy --dangerously-skip-permissions` 的烦恼：接入 **Antigravity CLI 官方原生 `title` 接口**（`settings.json` → `title`，旧会话自动回退 OSC 0/2），在 macOS / Linux / 原生 Windows Terminal 下的 Ghostty、iTerm2、Kitty、WezTerm、Terminal.app、VS Code 中稳定同步精确状态（`●` 工作中、`● [N]` 子代理运行中、`?` 等待你确认/输入、`✗` 报错、`✓` 全部完成）与精简主题（零额外 Token、无字节交错）：
+彻底告别多开时所有标签页都叫 `agy --dangerously-skip-permissions` 的烦恼：接入 **Antigravity CLI 官方原生 `title` 接口**（`settings.json` → `title`，旧会话自动回退 OSC 0/2），在 macOS / Linux / 原生 Windows Terminal 下的 Ghostty、iTerm2、Kitty、WezTerm、Terminal.app、VS Code 中稳定同步精确状态（`●` 工作中、`● [N]` 子代理运行中、`?` 等待你确认/输入、`✗` 报错、`✓` 全部完成）与精简主题（新开对话亦会自动同步 AGY 首轮概括标题，零额外 Token、无字节交错）：
 
 ![agy-bar Ghostty 标签页标题真机对比](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
 
 <sub>Ghostty 标签栏真机对比：左侧已自动同步为 `● agy-bar 开源状态栏`、`📊 agy-bar Token 热力图`，右侧为未启用前的默认 `agy --dangerously-skip-per...`。</sub>
 
 > **进阶技巧 — 让 Agent 换话题时自动缩写标签名（仅耗 ~10 tokens，零额外 API 调用）**
-> 在你的全局 `~/.gemini/antigravity-cli/AGENTS.md` 里加上这一句即可：
+> 在你的全局 `~/.gemini/AGENTS.md` 里加上这一句即可：
 > ```text
-> 当用户在长对话中明显切换到新任务或新话题时，静默执行一次 `agy-bar title "<4~8字中文简短主题>"` 更新终端标签页标题。
+> 在 Antigravity CLI (`agy`) 终端会话中，当用户发起明确的新任务或在长对话中切换到新话题时，静默执行一次 `agy-bar title "<4~8字中文简短主题>"` 更新终端标签页标题。
 > ```
 > *Ghostty 小贴士*：自定义标签名请优先使用 `agy-bar title "..."`，不要用 Ghostty 右键 **Change Title…**（会写入 `tabOverride` 锁死标签并屏蔽后续 `●` / `✓` 自动更新，清空留空回车即可解锁）。
 
@@ -103,7 +103,7 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 | 承诺 | 实现机制 |
 | --- | --- |
 | **100% 官方原生 `statusLine` + `title` 接口** | 不修改/不注入任何客户端二进制，不调用任何 Google/AGY 私有接口，不接触账号凭据；官方任意升级不失效、零封号风险。 |
-| **只读本地数值遥测** | SQLite 历史扫描（`Node >= 22.13`）全程 `readOnly: true`，**仅提取数值时间戳与 Token 计数**，绝不读取聊天正文。 |
+| **只读本地元数据遥测** | SQLite 扫描（`Node >= 22.13`）全程 `readOnly: true`，**仅提取数值时间戳、Token 计数、子代理父子 ID 与当前会话 `title` 元数据**，绝不读取聊天正文。 |
 | **透明联网策略** | 底栏渲染热路径**完全不联网**；仅默认每 24 小时后台异步拉取一次公开免鉴权的 `models.dev` / `LiteLLM` 参考单价，随时可 `agy-bar config set pricingAutoSync off` 严格离线。 |
 | **零依赖极致流畅** | `0` 第三方依赖，空闲刷新零子进程（PID 快速路径 + 3s Git 缓存 + SQLite `mtime` 跳过 + 5 分钟 Windows 主题缓存），多终端并发采用原子写防文件损坏。 |
 
@@ -226,7 +226,7 @@ eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
 ## 本地开发
 
 ```sh
-npm test            # 运行内置单元测试（87 项，macOS / Linux / Windows 三端 CI 验证）
+npm test            # 运行内置单元测试（88 项，macOS / Linux / Windows 三端 CI 验证）
 npm run preview     # 终端实时预览
 npm run preview:svg # 重新生成 assets/ 下全部 5 张展示 SVG
 npm run stats       # 查看本机统计

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { sanitizeText } from './ansi.mjs';
 import { configDir, loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
+import { readConversationSummaryTitle } from './step-timing.mjs';
 import { buildTabTitle } from './tab-title.mjs';
 import { deriveSessionId, peekSessionState, resolveSessionTitles, sessionsDir } from './telemetry.mjs';
 
@@ -65,19 +66,41 @@ export function isNativeTitleActive(
 
 export function renderNativeTitle(
   payload = {},
-  { config = loadConfig(), prevSession = undefined, baseDir = configDir(homedir()), now = Date.now(), hostPid = process.ppid, touchMarker = true } = {},
+  {
+    config = loadConfig(),
+    prevSession = undefined,
+    home = homedir(),
+    baseDir = configDir(home),
+    summaryDbPath = null,
+    now = Date.now(),
+    hostPid = process.ppid,
+    touchMarker = true,
+  } = {},
 ) {
   if (config.tabTitle === false) return '';
 
   const p = payload && typeof payload === 'object' ? payload : {};
   const sessionId = deriveSessionId(p);
   const prev = prevSession !== undefined ? prevSession : peekSessionState(p, { baseDir });
-  const { customTitle } = resolveSessionTitles(p, prev);
+  const hasPayloadTitle = Boolean(sanitizeText(p?.conversation_title || ''));
+  const summaryLookup =
+    !hasPayloadTitle && config.tabTitleSource !== 'dir' && config.dbTiming !== false
+      ? readConversationSummaryTitle(p, {
+          home,
+          dbPath: summaryDbPath,
+          prevDbStamp: prev?.summaryDbStamp ?? null,
+          prevTitle: prev?.conversationTitle ?? null,
+          prevCheckedAt: prev?.summaryTitleCheckedAt ?? null,
+          now,
+          recheckIntervalMs: 5_000,
+        })
+      : null;
+  const { conversationTitle, customTitle } = resolveSessionTitles(p, prev, {
+    dbTitle: summaryLookup?.title ?? null,
+  });
 
   const cwd = p?.workspace?.current_dir || p?.cwd || prev?.cwd || null;
-  const needsGit =
-    config.tabTitleSource === 'dir' ||
-    (!customTitle && !sanitizeText(p?.conversation_title || ''));
+  const needsGit = config.tabTitleSource === 'dir' || (!customTitle && !conversationTitle);
   let git = null;
   if (needsGit && cwd) {
     if (prev && prev.cwd === cwd && prev.branch) {
@@ -88,7 +111,9 @@ export function renderNativeTitle(
     }
   }
 
-  const title = buildTabTitle(p, { config, git, customTitle });
+  const effectivePayload =
+    conversationTitle && !hasPayloadTitle ? { ...p, conversation_title: conversationTitle } : p;
+  const title = buildTabTitle(effectivePayload, { config, git, customTitle });
   if (touchMarker) {
     touchNativeTitleMarker(sessionId, { now, hostPid, baseDir });
   }
@@ -98,7 +123,9 @@ export function renderNativeTitle(
 export async function runTitleCommand({
   stdin = process.stdin,
   stdout = process.stdout,
-  baseDir = configDir(homedir()),
+  home = homedir(),
+  baseDir = configDir(home),
+  summaryDbPath = null,
   config = undefined,
   now = Date.now(),
   hostPid = process.ppid,
@@ -111,7 +138,7 @@ export async function runTitleCommand({
   try {
     const payload = raw.trim() ? JSON.parse(raw) : {};
     const cfg = config ?? loadConfig();
-    const title = renderNativeTitle(payload, { config: cfg, baseDir, now, hostPid });
+    const title = renderNativeTitle(payload, { config: cfg, home, baseDir, summaryDbPath, now, hostPid });
     if (title) {
       stdout.write(`${title}\n`);
     }
