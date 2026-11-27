@@ -2,6 +2,12 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.5] - 2026-11-26
+
+### Added
+- **Automated Tokenless npm OIDC Trusted Publishing & Provenance (`.github/workflows/publish.yml`)**:
+  - Releases are now built, tested, and published automatically from GitHub Actions via short-lived OIDC Trusted Publishing with cryptographic Sigstore provenance attestations (`npm publish --provenance --access public`) and release-tag/package-version verification.
+
 ## [0.9.4] - 2026-11-26
 
 ### Changed
