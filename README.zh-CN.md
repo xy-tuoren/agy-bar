@@ -92,18 +92,22 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 | `5h ▮▮▮▮▮▯ 85% (2h30m)` / `7d …` | 当前模型池 5 小时与 7 天剩余额度及重置倒计时 | 绿 `>25%` → 粗体黄 `≤25%` → 粗体红 `≤10%`（`quotaWarn` / `quotaDanger`）；多终端本地自动同步 | `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset` |
 | `(ready)` vs `(due)` | 5h 重置到点提示 | 5h 已过重置时间且 `7d` 仍有余额时显示绿色 `(ready)`（发消息即刷新）；若受 `7d` 耗尽阻塞则保持红 `(due)` | `reset` |
 
-### 终端标签页 · 6 态统一活动状态机
+### 终端标签页 · 6 态统一活动状态机（多开并行一眼决策）
 
-| 标签页前缀 | 会话状态 | 触发条件 | 对应底栏徽章 | `agy-bar monitor` |
+| 标签页前缀 | 会话状态 | 触发条件 | 实战作用与价值（不用挨个切窗口盲查） | 对应底栏 / Monitor |
 | --- | --- | --- | --- | --- |
-| `● <主题>` | **工作中** | 主 Agent 运行中（`working` / `tool_use` / `thinking`） | `● 34s · esc` | `● working` |
-| `● [N] <主题>` | **子代理运行中** | 主 Agent 已暂停，但仍有 `N` 个子代理在跑 | `SUB N` | `● sub:N` |
-| `? <主题>` | **等待你处理** | 工具审批待确认（`tool_confirmation_pending`）或 `reviewing` | `CONFIRM` / `INPUT` | `? confirm` / `? input` |
-| `✗ <主题>` | **报错** | 会话出现错误（`agent_state: "error"`） | `ERR` | `✗ error` |
-| `… <主题>` | **启动/认证中** | 会话处于 `authenticating` 或 `initializing` | *(启动态)* | `… auth` / `… init` |
-| `✓ <主题>` | **已完成/空闲** | 主 Agent 与子代理均已空闲（即使后台 `TASK` 服务常驻也保持 `✓`） | *(安静；有服务时显示 `TASK N`)* | `● idle` / `● task:N` |
+| `● <主题>` | **工作中** | 主 Agent 运行中（`working` / `tool_use` / `thinking`） | 正在思考或写代码，放心留在别的窗口干活，无需反复切回干等 | `● 34s · esc` / `working` |
+| `● [N] <主题>` | **子代理并行中** | 主 Agent 已暂停，但仍有 `N` 个子代理在跑 | 一眼看出后台还有 `N` 个子任务未收尾，**避免误以为完成而提前关闭或打断汇总** | `SUB N` / `sub:N` |
+| `? <主题>` | **阻塞等你处理** | 工具审批待确认（`tool_confirmation_pending`）或 `reviewing` | 最高优先级提醒！Agent 卡在审批或等你拍板，**直达最该处理的标签页，零空等浪费** | `CONFIRM` / `INPUT` |
+| `✗ <主题>` | **异常报错** | 会话出现错误（`agent_state: "error"`） | 任务报错中断立刻暴露，第一时间止损重试，不白等半天 | `ERR` / `error` |
+| `… <主题>` | **启动 / 认证中** | 会话处于 `authenticating` 或 `initializing` | 刚拉起会话或待登录初始化，与“已完成”明确区分 | *(启动态)* / `auth`·`init` |
+| `✓ <主题>` | **真正全部完成** | 主 Agent 与子代理均已空闲（后台 `TASK` 服务常驻仍保持 `✓`） | 明确告知任务已收工可以切回验收，**不被常驻 dev server 误报成忙碌** | *(安静/`TASK N`)* / `idle` |
 
-> **标签页主题自动解析顺序（默认 `tabTitleSource: "auto"`）**：自定义主题（`agy-bar title "..."`）→ AGY 实时 `conversation_title` → 只读兜底查询本机 `conversation_summaries.db` 的 `title` 字段（新开对话也能在首轮后自动从项目名切换为概括文案！）→ 工作区目录 + Git 分支（`agy-bar (main)`）。
+> **标签页标题的 4 大优势（默认 `tabTitleSource: "auto"`）**：
+> 1. **零 Token 自动首轮概括（含全新对话）**：依次解析 `customTitle` → AGY 实时 `conversation_title` → 只读兜底本机 `conversation_summaries.db` 的 `title` 列 → `项目名 (分支)`，连新开会话首轮也能自动切换成真实任务概括；
+> 2. **100% 官方原生 `title` 钩子**：跨 macOS / Linux / 原生 Windows Terminal 稳定工作，零 `/dev/tty` 字符交错、零 `ps` 子进程；
+> 3. **多标签 PID 精准定向**：多开并发调用 `agy-bar title` 时自动匹配宿主 `agy` PID，绝不误改隔壁标签；
+> 4. **随话题演进且尊重 `/rename`**：配合 `~/.gemini/AGENTS.md` 一行规则即可在换话题时静默更新中文短标题，且手动 `/rename` 后自动让位。
 
 ---
 

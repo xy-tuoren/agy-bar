@@ -92,18 +92,22 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 | `5h ▮▮▮▮▮▯ 85% (2h30m)` / `7d …` | Active model pool 5-hour & weekly remaining quotas + reset countdown | Green `>25%` → bold amber `≤25%` → bold red `≤10%` (`quotaWarn` / `quotaDanger`); synced across local terminals | `quota`, `quotaBar`, `quota5h`, `quotaWeekly`, `reset` |
 | `(ready)` vs `(due)` | Expired 5h reset-window indicator | Green `(ready)` when 5h reset time has passed & `7d` still has quota (send a prompt to refresh); red `(due)` when blocked by `7d` | `reset` |
 
-### Terminal Tab Title · 6-State Unified Activity Machine
+### Terminal Tab Title · 6-State Unified Activity Machine (Multi-Tab Triage at a Glance)
 
-| Tab Prefix | Session State | Trigger | Statusline Badge | `agy-bar monitor` |
+| Tab Prefix | Session State | Trigger | Why It Matters in Parallel Workflows | Statusline / Monitor |
 | --- | --- | --- | --- | --- |
-| `● <topic>` | **Working** | Main agent active (`working` / `tool_use` / `thinking`) | `● 34s · esc` | `● working` |
-| `● [N] <topic>` | **Subagents Running** | Main agent idle while `N` subagents are still running | `SUB N` | `● sub:N` |
-| `? <topic>` | **Needs Attention** | Tool approval pending (`tool_confirmation_pending`) or `reviewing` | `CONFIRM` / `INPUT` | `? confirm` / `? input` |
-| `✗ <topic>` | **Error** | Session encountered an error (`agent_state: "error"`) | `ERR` | `✗ error` |
-| `… <topic>` | **Starting Up** | Session `authenticating` or `initializing` | *(startup)* | `… auth` / `… init` |
-| `✓ <topic>` | **Idle / Done** | Main agent & subagents idle (even if a background `TASK` dev server stays up) | *(calm; `TASK N` if active)* | `● idle` / `● task:N` |
+| `● <topic>` | **Working** | Main agent active (`working` / `tool_use` / `thinking`) | Agent is actively running — stay focused in other tabs without blind polling | `● 34s · esc` / `working` |
+| `● [N] <topic>` | **Subagents Running** | Main agent idle while `N` subagents are still running | Shows `N` background subagents are still finishing so you **never close or interrupt early** | `SUB N` / `sub:N` |
+| `? <topic>` | **Blocked on You** | Tool approval pending (`tool_confirmation_pending`) or `reviewing` | Highest-priority cue — jump straight to the blocked tab instead of letting it sit idle | `CONFIRM` / `INPUT` |
+| `✗ <topic>` | **Error** | Session hit an error (`agent_state: "error"`) | Surfaces failures immediately so you recover fast instead of waiting on a dead run | `ERR` / `error` |
+| `… <topic>` | **Starting Up** | Session `authenticating` or `initializing` | Clearly distinguishes startup/auth from truly finished idle tabs | *(startup)* / `auth`·`init` |
+| `✓ <topic>` | **Truly Done** | Main agent & subagents idle (stays `✓` even if a background `TASK` server runs) | Safe signal to switch back and review results without false busy noise from dev servers | *(calm/`TASK N`)* / `idle` |
 
-> **Automatic topic resolution (`tabTitleSource: "auto"`)**: `customTitle` (`agy-bar title "..."`) → AGY's live `conversation_title` → read-only fallback to AGY's local `conversation_summaries.db` `title` column (so even brand-new conversations automatically switch from `project (branch)` to AGY's first-turn summary!) → workspace + Git branch fallback (`agy-bar (main)`).
+> **4 Key Advantages of `agy-bar` Tab Titles (`tabTitleSource: "auto"`)**:
+> 1. **Zero-Token Initial Summaries (Even on Brand-New Chats)**: Resolves `customTitle` → AGY's live `conversation_title` → read-only fallback to local `conversation_summaries.db` `title` → `project (branch)`, so brand-new tabs auto-switch from directory names to task summaries after turn 1.
+> 2. **100% Official Native `title` Hook**: Works cleanly on macOS, Linux, and native Windows Terminal with zero `/dev/tty` interleaving and zero `ps` subprocesses.
+> 3. **PID-Accurate Multi-Tab Targeting**: `agy-bar title` matches the invoking terminal's host `agy` PID so concurrent tabs never overwrite each other.
+> 4. **Dynamic Topic Tracking & `/rename` Friendly**: Add one line to `~/.gemini/AGENTS.md` to silently refresh concise topics on topic shifts (~10 tokens), while manual `/rename` in `agy` cleanly supersedes overrides.
 
 ---
 
