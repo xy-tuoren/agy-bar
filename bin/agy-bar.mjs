@@ -76,9 +76,10 @@ export const HELP_TEXT = [
   'Usage: agy-bar <command> [options]',
   '',
   'Commands:',
-  '  install [options]       Install statusline + global ~/.local/bin/agy-bar command',
+  '  install [options]       Install statusline + native AGY title hook + global agy-bar CLI',
   '    --proxy-hook          Also install managed agy() shell hook without prompting',
   '    --no-proxy-hook       Skip shell hook without prompting (leaves ~/.zshrc untouched)',
+  '    --no-title            Skip configuring AGY native settings.json title hook',
   '    --no-skill            Skip installing the companion /agy-bar skill',
   '    --no-shim             Skip installing the ~/.local/bin/agy-bar shortcut command',
   '    -y, --yes             Non-interactive install (keeps ~/.zshrc untouched unless --proxy-hook)',
@@ -174,6 +175,8 @@ function parseFlags(args) {
     else if (arg === '--with-skill') flags.withSkill = true;
     else if (arg === '--no-shim') flags.withShim = false;
     else if (arg === '--with-shim') flags.withShim = true;
+    else if (arg === '--no-title') flags.withTitle = false;
+    else if (arg === '--with-title') flags.withTitle = true;
     else if (arg === '--no-shell-hook' || arg === '--no-proxy-hook') flags.withShellHook = false;
     else if (arg === '--with-shell-hook' || arg === '--proxy-hook') flags.withShellHook = true;
     else if (arg === '--yes' || arg === '-y') flags.yes = true;
@@ -267,6 +270,7 @@ export async function main(argv = process.argv.slice(2)) {
     const result = installAgyBar({
       withSkill: flags.withSkill ?? true,
       withShim,
+      withTitle: flags.withTitle ?? true,
       withShellHook: hookDecision.enable,
       shell: flags.shell ?? null,
       preset: flags.preset ?? null,
@@ -274,6 +278,11 @@ export async function main(argv = process.argv.slice(2)) {
       barStyle: flags.barStyle ?? null,
     });
     console.log(`Installed agy-bar statusline at ${result.scriptPath}`);
+    if (result.titleScriptPath) {
+      console.log(`Installed native AGY title hook at ${result.titleScriptPath}`);
+    } else if (result.titleWarning) {
+      console.log(`Note: ${result.titleWarning}`);
+    }
     console.log(`Updated AGY settings: ${result.settingsPath}`);
     if (result.shimPath) {
       console.log(`Installed global CLI command: ${result.shimPath}`);
@@ -469,7 +478,7 @@ export async function main(argv = process.argv.slice(2)) {
     );
     const writeRes = renderedTitle && cfg.tabTitle ? writeOscTitle(renderedTitle) : { written: false, tty: null };
     if (writeRes.written) {
-      updateSessionTabTitle(updated.sessionId, renderedTitle, { hostPid: writeRes.hostPid });
+      updateSessionTabTitle(updated.sessionId, renderedTitle, { hostPid: writeRes.hostPid, tty: writeRes.tty });
     }
     console.log(
       flags.clear

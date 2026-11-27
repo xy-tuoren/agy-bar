@@ -82,7 +82,7 @@ Running 3–5 `agy` sessions across different repos? Open `agy-bar monitor` in a
 
 ### 5. Automatic Terminal Tab Titles (`●` / `● [N]` / `?` / `✓`) & Agent Summarization (`agy-bar title`)
 
-Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, and VS Code with live activity state (`●` working, `● [N]` running subagents, `?` waiting for user input/confirmation, `✗` error, `✓` truly idle) + concise topic title via standard OSC 0/2 (zero extra tokens; safely skipped on native Windows):
+Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTerm2, Kitty, WezTerm, macOS Terminal, Windows Terminal, and VS Code using **Antigravity CLI's official `title` hook** (`settings.json` → `title`, with automatic OSC 0/2 fallback for older sessions) to show live activity state (`●` working, `● [N]` running subagents, `?` waiting for user input/confirmation, `✗` error, `✓` truly idle) + concise topic title (zero extra tokens, full macOS / Linux / Windows support):
 
 ![agy-bar live Ghostty tab titles comparison](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-tab-titles.png)
 
@@ -100,7 +100,7 @@ Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTe
 
 | Guarantee | How It Works |
 | --- | --- |
-| **100% Official `statusLine` Hook** | Zero binary patching, zero Electron injection, zero Google/AGY private API calls, zero account credential access. Survives every AGY update cleanly. |
+| **100% Official `statusLine` + `title` Hooks** | Zero binary patching, zero Electron injection, zero Google/AGY private API calls, zero account credential access. Survives every AGY update cleanly. |
 | **Read-Only Local Telemetry** | SQLite conversation scans (`Node >= 22.13`) open DBs in `readOnly: true` mode and extract **only numeric timestamps & token counts** — never prompts or replies. |
 | **Transparent Network Policy** | Statusline rendering itself **never touches the network**. Only an optional 24-hour background sync fetches public unauthenticated pricing JSON (`models.dev` / `LiteLLM`); run `agy-bar config set pricingAutoSync off` for strict offline mode. |
 | **Zero-Dep Fast Hot Path** | `0` runtime dependencies, zero-subprocess idle refreshes (PID fast-path + 3s Git cache + SQLite `mtime` skip + 5-min Windows theme cache), and atomic file writes across concurrent terminals. |

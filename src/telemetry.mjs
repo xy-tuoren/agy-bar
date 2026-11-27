@@ -158,6 +158,19 @@ function pickQuotaSnapshot(quota) {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+export function resolveSessionTitles(payload = {}, prev = null) {
+  const conversationTitle = sanitizeText(payload?.conversation_title || '') || prev?.conversationTitle || null;
+  // If user explicitly renamed the conversation via /rename (conversation_title changed),
+  // clear any older custom tab override automatically.
+  let customTitle = prev?.customTitle || null;
+  let customTitleBase = prev?.customTitleBase ?? null;
+  if (customTitle && conversationTitle && customTitleBase && conversationTitle !== customTitleBase) {
+    customTitle = null;
+    customTitleBase = null;
+  }
+  return { conversationTitle, customTitle, customTitleBase };
+}
+
 export function recordTelemetry(
   payload = {},
   {
@@ -165,6 +178,7 @@ export function recordTelemetry(
     git = null,
     stepTiming = null,
     prevSession = undefined,
+    tabSync = null,
     baseDir = configDir(homedir()),
     cacheTtlSec = 300,
     enableLedger = true,
@@ -376,15 +390,21 @@ export function recordTelemetry(
   const cacheRemainingSec =
     lastActivityAt !== null ? Math.max(0, Math.round((cacheTtlMs - (now - lastActivityAt)) / 1000)) : null;
 
-  const conversationTitle = sanitizeText(p.conversation_title || '') || prev?.conversationTitle || null;
-  // If user explicitly renamed the conversation via /rename (conversation_title changed),
-  // clear any older custom tab override automatically.
-  let customTitle = prev?.customTitle || null;
-  let customTitleBase = prev?.customTitleBase ?? null;
-  if (customTitle && conversationTitle && customTitleBase && conversationTitle !== customTitleBase) {
-    customTitle = null;
-    customTitleBase = null;
-  }
+  const { conversationTitle, customTitle, customTitleBase } = resolveSessionTitles(p, prev);
+  const tabWritten = Boolean(tabSync?.written && tabSync.title);
+  const nextTabTitle = tabWritten ? tabSync.title : prev?.lastTabTitle || null;
+  const nextTabHostPid = tabWritten
+    ? (tabSync.hostPid ?? prev?.lastTabHostPid ?? null)
+    : (prev?.lastTabHostPid ?? null);
+  const nextTabTty = tabWritten
+    ? (tabSync.tty && tabSync.tty !== 'custom' ? tabSync.tty : prev?.lastTabTty ?? null)
+    : (prev?.lastTabTty ?? null);
+  const nextTabUpdatedAt = tabWritten ? now : prev?.lastTabUpdatedAt ?? null;
+  const nextTabError = tabWritten
+    ? null
+    : tabSync?.changed && !tabSync.written
+      ? tabSync.error || 'write_failed'
+      : prev?.lastTabError ?? null;
 
   const nextState = {
     sessionId,
@@ -409,8 +429,11 @@ export function recordTelemetry(
     conversationTitle,
     customTitle,
     customTitleBase,
-    lastTabTitle: prev?.lastTabTitle || null,
-    lastTabHostPid: prev?.lastTabHostPid ?? null,
+    lastTabTitle: nextTabTitle,
+    lastTabHostPid: nextTabHostPid,
+    lastTabTty: nextTabTty,
+    lastTabUpdatedAt: nextTabUpdatedAt,
+    lastTabError: nextTabError,
     model: modelName,
     effort: sanitizeText(p.model?.effort || '') || null,
     usedPct,
@@ -456,12 +479,17 @@ export function recordTelemetry(
     lastActivityAt,
     conversationTitle,
     customTitle,
-    prevTabTitle: prev?.lastTabTitle || null,
-    prevTabHostPid: prev?.lastTabHostPid ?? null,
+    prevTabTitle: nextTabTitle,
+    prevTabHostPid: nextTabHostPid,
+    prevTabTty: nextTabTty,
   };
 }
 
-export function updateSessionTabTitle(sessionId, tabTitle, { hostPid = null, baseDir = configDir(homedir()) } = {}) {
+export function updateSessionTabTitle(
+  sessionId,
+  tabTitle,
+  { hostPid = null, tty = null, now = Date.now(), baseDir = configDir(homedir()) } = {},
+) {
   if (!sessionId) return false;
   const sFile = join(sessionsDir(baseDir), `${sessionId}.json`);
   const prev = readSessionFile(sFile);
@@ -469,7 +497,14 @@ export function updateSessionTabTitle(sessionId, tabTitle, { hostPid = null, bas
   try {
     writeFileAtomic(
       sFile,
-      JSON.stringify({ ...prev, lastTabTitle: tabTitle, ...(hostPid !== null ? { lastTabHostPid: hostPid } : {}) }) + '\n',
+      JSON.stringify({
+        ...prev,
+        lastTabTitle: tabTitle,
+        lastTabUpdatedAt: now,
+        lastTabError: null,
+        ...(hostPid !== null ? { lastTabHostPid: hostPid } : {}),
+        ...(tty && tty !== 'custom' ? { lastTabTty: tty } : {}),
+      }) + '\n',
     );
     return true;
   } catch {
@@ -519,6 +554,7 @@ export function listSessions({ baseDir = configDir(homedir()), now = Date.now(),
       if (prune) {
         try {
           rmSync(full, { force: true });
+          rmSync(full.replace(/\.json$/, '.title'), { force: true });
         } catch {
           // Ignore prune errors.
         }

@@ -5,6 +5,7 @@ import { classifyAgentActivity } from './agent-state.mjs';
 import { clipPlain, sanitizeText, visibleWidth } from './ansi.mjs';
 
 const VALID_TTY_RE = /^(?:tty[a-z0-9]+|pts\/\d+)$/i;
+const VALID_DEV_TTY_RE = /^\/dev\/(?:tty[a-z0-9]+|pts\/\d+)$/i;
 
 const FILLER_PREFIXES = [
   /^(?:请|麻烦|能不能|可以|能否)?(?:帮我|给我|帮忙)/,
@@ -85,7 +86,7 @@ function defaultReadProc(pid) {
   try {
     const out = execFileSync('ps', ['-o', 'ppid=,tty=,comm=', '-p', String(pid)], {
       encoding: 'utf8',
-      timeout: 120,
+      timeout: 500,
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
     if (!out) return null;
@@ -153,25 +154,53 @@ export function resolveTerminalTty(opts = {}) {
   return resolveTerminalTarget(opts).tty;
 }
 
-export function writeOscTitle(title, { ttyPath = null, writer = null, resolveOpts = {} } = {}) {
+export function writeOscTitle(title, { ttyPath = null, writer = null, resolveOpts = {}, writeToTty = null } = {}) {
   const seq = formatOscTitle(title);
-  if (!seq) return { written: false, tty: null, hostPid: null, sequence: '' };
+  if (!seq) return { written: false, tty: null, hostPid: null, sequence: '', error: 'empty_title' };
 
   if (typeof writer === 'function') {
     writer(seq);
-    return { written: true, tty: ttyPath || 'custom', hostPid: null, sequence: seq };
+    return { written: true, tty: ttyPath || 'custom', hostPid: null, sequence: seq, error: null };
   }
 
   const resolved = ttyPath ? { tty: ttyPath, hostPid: null } : resolveTerminalTarget(resolveOpts);
-  if (!resolved.tty) return { written: false, tty: null, hostPid: null, sequence: seq };
+  if (!resolved.tty) return { written: false, tty: null, hostPid: null, sequence: seq, error: 'no_tty' };
+
+  if (typeof writeToTty === 'function') {
+    try {
+      const ok = writeToTty(resolved.tty, seq);
+      return {
+        written: ok !== false,
+        tty: resolved.tty,
+        hostPid: resolved.hostPid,
+        sequence: seq,
+        error: ok === false ? 'write_failed' : null,
+      };
+    } catch (err) {
+      return {
+        written: false,
+        tty: resolved.tty,
+        hostPid: resolved.hostPid,
+        sequence: seq,
+        error: err?.code || err?.message || 'write_failed',
+      };
+    }
+  }
 
   let fd = null;
   try {
-    fd = openSync(resolved.tty, 'w');
+    const flags = (constants.O_WRONLY ?? 1) | (constants.O_NOCTTY ?? 0);
+    fd = openSync(resolved.tty, flags);
     writeSync(fd, seq);
-    return { written: true, tty: resolved.tty, hostPid: resolved.hostPid, sequence: seq };
-  } catch {
-    return { written: false, tty: resolved.tty, hostPid: resolved.hostPid, sequence: seq };
+    return { written: true, tty: resolved.tty, hostPid: resolved.hostPid, sequence: seq, error: null };
+  } catch (err) {
+    return {
+      written: false,
+      tty: resolved.tty,
+      hostPid: resolved.hostPid,
+      sequence: seq,
+      error: err?.code || err?.message || 'write_failed',
+    };
   } finally {
     if (fd !== null) {
       try {
@@ -191,33 +220,51 @@ export function syncTabTitle(
     customTitle = null,
     prevTabTitle = null,
     prevTabHostPid = null,
+    prevTabTty = null,
     hostPidHint = null,
     force = false,
     ttyPath = null,
     writer = null,
+    writeToTty = null,
     resolveOpts = {},
   } = {},
 ) {
   if (config.tabTitle === false) {
-    return { changed: false, written: false, title: null, tty: null, hostPid: null };
+    return { changed: false, written: false, title: null, tty: null, hostPid: null, error: null };
   }
 
   const title = buildTabTitle(payload, { config, git, customTitle });
   if (!title) {
-    return { changed: false, written: false, title: null, tty: null, hostPid: null };
+    return { changed: false, written: false, title: null, tty: null, hostPid: null, error: null };
   }
 
-  // Fast path: skip spawning `ps` when neither title nor host agy PID changed.
+  const sameHostHint =
+    prevTabHostPid !== null && typeof hostPidHint === 'number' && hostPidHint === prevTabHostPid;
+
+  // Fast path 1: skip spawning `ps` when neither title nor host agy PID changed.
+  if (!force && !writer && !ttyPath && title === prevTabTitle && sameHostHint) {
+    return { changed: false, written: false, title, tty: prevTabTty || null, hostPid: prevTabHostPid, error: null };
+  }
+
+  // Fast path 2: on title/state change under the same agy host PID, write directly to cached TTY (zero `ps` spawns).
   if (
-    !force &&
     !writer &&
     !ttyPath &&
-    title === prevTabTitle &&
-    prevTabHostPid !== null &&
-    typeof hostPidHint === 'number' &&
-    hostPidHint === prevTabHostPid
+    sameHostHint &&
+    typeof prevTabTty === 'string' &&
+    VALID_DEV_TTY_RE.test(prevTabTty)
   ) {
-    return { changed: false, written: false, title, tty: null, hostPid: prevTabHostPid };
+    const fastWrite = writeOscTitle(title, { ttyPath: prevTabTty, writeToTty });
+    if (fastWrite.written) {
+      return {
+        changed: true,
+        written: true,
+        title,
+        tty: prevTabTty,
+        hostPid: prevTabHostPid,
+        error: null,
+      };
+    }
   }
 
   const resolved = !writer && !ttyPath ? resolveTerminalTarget(resolveOpts) : { tty: ttyPath, hostPid: null };
@@ -225,9 +272,16 @@ export function syncTabTitle(
   const hostUnknownBefore = resolved.hostPid !== null && prevTabHostPid === null;
 
   if (!force && title === prevTabTitle && !hostChanged && !hostUnknownBefore) {
-    return { changed: false, written: false, title, tty: resolved.tty, hostPid: resolved.hostPid };
+    return { changed: false, written: false, title, tty: resolved.tty, hostPid: resolved.hostPid, error: null };
   }
 
-  const result = writeOscTitle(title, { ttyPath: resolved.tty, writer, resolveOpts });
-  return { changed: true, written: result.written, title, tty: result.tty, hostPid: resolved.hostPid };
+  const result = writeOscTitle(title, { ttyPath: resolved.tty, writer, writeToTty, resolveOpts });
+  return {
+    changed: true,
+    written: result.written,
+    title,
+    tty: result.tty,
+    hostPid: resolved.hostPid ?? (sameHostHint ? prevTabHostPid : null),
+    error: result.error || null,
+  };
 }

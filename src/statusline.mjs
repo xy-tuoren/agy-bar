@@ -10,7 +10,8 @@ import { extractAccountKey, syncSharedQuota } from './quota-sync.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
-import { maybeCaptureRedactedPayload, peekSessionState, recordTelemetry, updateSessionTabTitle } from './telemetry.mjs';
+import { deriveSessionId, maybeCaptureRedactedPayload, peekSessionState, recordTelemetry, resolveSessionTitles } from './telemetry.mjs';
+import { isNativeTitleActive } from './title.mjs';
 
 const GIT_DIRTY_CACHE_MS = 3000;
 
@@ -55,6 +56,27 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
                 : null,
           })
         : null;
+
+    // Sync terminal tab title synchronously before async DB scans when AGY's native
+    // `settings.json.title` hook is not already driving this session's title.
+    let tabSync = null;
+    if (!plain && config.tabTitle) {
+      const sessionIdForTitle = deriveSessionId(effectivePayload);
+      if (!isNativeTitleActive(sessionIdForTitle, { now, hostPid: process.ppid })) {
+        const { customTitle } = resolveSessionTitles(effectivePayload, prevSession);
+        tabSync = syncTabTitle(effectivePayload, {
+          config,
+          git,
+          customTitle,
+          prevTabTitle: prevSession?.lastTabTitle || null,
+          prevTabHostPid: prevSession?.lastTabHostPid ?? null,
+          prevTabTty: prevSession?.lastTabTty || null,
+          hostPidHint: process.ppid,
+          resolveOpts: { env },
+        });
+      }
+    }
+
     const stepTiming = config.dbTiming
       ? await readLatestStepTiming(effectivePayload, { prevDbStamp: prevSession?.dbStamp ?? null })
       : null;
@@ -63,6 +85,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       git,
       stepTiming,
       prevSession,
+      tabSync,
       cacheTtlSec: config.cacheTtlSec,
       enableLedger: config.ledger,
     });
@@ -93,21 +116,6 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       effectiveSessionCostUsd !== telemetry.sessionCostUsd
         ? { ...telemetry, sessionCostUsd: effectiveSessionCostUsd }
         : telemetry;
-
-    if (!plain && config.tabTitle) {
-      const tab = syncTabTitle(effectivePayload, {
-        config,
-        git,
-        customTitle: telemetry.customTitle,
-        prevTabTitle: telemetry.prevTabTitle,
-        prevTabHostPid: telemetry.prevTabHostPid,
-        hostPidHint: process.ppid,
-        resolveOpts: { env },
-      });
-      if (tab.changed && tab.title) {
-        updateSessionTabTitle(telemetry.sessionId, tab.title, { hostPid: tab.hostPid });
-      }
-    }
 
     if (config.pricingAutoSync) {
       maybeTriggerBackgroundPricingSync({ enabled: true, now, env });

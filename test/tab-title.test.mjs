@@ -11,6 +11,7 @@ import {
   syncTabTitle,
 } from '../src/tab-title.mjs';
 import { recordTelemetry, setSessionCustomTitle } from '../src/telemetry.mjs';
+import { isNativeTitleActive, renderNativeTitle, runTitleCommand } from '../src/title.mjs';
 
 test('compactTitleText strips URLs, slash commands, filler prefixes, and respects display width', () => {
   assert.equal(compactTitleText('请帮我优化 agy-bar 状态栏颜色'), '优化 agy-bar 状态栏颜色');
@@ -160,6 +161,126 @@ test('setSessionCustomTitle persists override and auto-clears if AGY conversatio
     );
     assert.equal(r2.customTitle, null);
     assert.equal(r2.conversationTitle, '全新重命名标题');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('syncTabTitle uses cached prevTabTty with zero ps calls on state transitions and never persists failed writes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-tab-retry-'));
+  try {
+    const writes = [];
+    const idlePayload = { conversation_id: 'conv-retry', agent_state: 'idle', conversation_title: '测试重试' };
+
+    // Fast path 2: working -> idle under same hostPid writes directly to prevTabTty without invoking ps.
+    const fastTransition = syncTabTitle(idlePayload, {
+      config: { tabTitle: true },
+      prevTabTitle: '● 测试重试',
+      prevTabHostPid: 40384,
+      prevTabTty: '/dev/ttys002',
+      hostPidHint: 40384,
+      writeToTty: (tty, seq) => {
+        writes.push({ tty, seq });
+        return true;
+      },
+      resolveOpts: {
+        readProc: () => {
+          throw new Error('cached TTY fast write must not spawn ps');
+        },
+      },
+    });
+    assert.equal(fastTransition.changed, true);
+    assert.equal(fastTransition.written, true);
+    assert.equal(fastTransition.tty, '/dev/ttys002');
+    assert.equal(fastTransition.hostPid, 40384);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].tty, '/dev/ttys002');
+    assert.ok(writes[0].seq.includes('✓ 测试重试'));
+
+    // Failed write must NOT advance lastTabTitle in session state so subsequent ticks retry automatically.
+    const t0 = 1_795_750_000_000;
+    recordTelemetry(
+      { conversation_id: 'conv-retry', agent_state: 'working', conversation_title: '测试重试' },
+      {
+        now: t0,
+        baseDir: dir,
+        tabSync: { changed: true, written: true, title: '● 测试重试', hostPid: 40384, tty: '/dev/ttys002', error: null },
+      },
+    );
+    const failedIdle = recordTelemetry(
+      idlePayload,
+      {
+        now: t0 + 1000,
+        baseDir: dir,
+        tabSync: { changed: true, written: false, title: '✓ 测试重试', hostPid: 40384, tty: null, error: 'no_tty' },
+      },
+    );
+    assert.equal(failedIdle.prevTabTitle, '● 测试重试');
+
+    const retriedIdle = recordTelemetry(
+      idlePayload,
+      {
+        now: t0 + 2000,
+        baseDir: dir,
+        tabSync: { changed: true, written: true, title: '✓ 测试重试', hostPid: 40384, tty: '/dev/ttys002', error: null },
+      },
+    );
+    assert.equal(retriedIdle.prevTabTitle, '✓ 测试重试');
+    assert.equal(retriedIdle.prevTabTty, '/dev/ttys002');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('native AGY title command renders single-line state titles, respects customTitle, and sets active marker', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agy-bar-native-title-'));
+  try {
+    const t0 = 1_795_760_000_000;
+    recordTelemetry(
+      { conversation_id: 'conv-native-1', conversation_title: '原始标题', agent_state: 'working' },
+      { now: t0, baseDir: dir },
+    );
+    setSessionCustomTitle('agy-bar 开源状态栏', { sessionId: 'conv-native-1', baseDir: dir, now: t0 + 500 });
+
+    const idleTitle = renderNativeTitle(
+      { conversation_id: 'conv-native-1', conversation_title: '原始标题', agent_state: 'idle' },
+      { config: { tabTitle: true, tabTitleSource: 'auto', tabTitleMaxLen: 26 }, baseDir: dir, now: t0 + 1000, hostPid: 40384 },
+    );
+    assert.equal(idleTitle, '✓ agy-bar 开源状态栏');
+    assert.equal(isNativeTitleActive('conv-native-1', { baseDir: dir, now: t0 + 5000, hostPid: 40384 }), true);
+
+    const subTitle = renderNativeTitle(
+      {
+        conversation_id: 'conv-native-1',
+        conversation_title: '原始标题',
+        agent_state: 'idle',
+        subagents: [{ status: 'running' }, { status: 'running' }],
+      },
+      { config: { tabTitle: true, tabTitleSource: 'auto', tabTitleMaxLen: 26 }, baseDir: dir, now: t0 + 2000, hostPid: 40384 },
+    );
+    assert.equal(subTitle, '● [2] agy-bar 开源状态栏');
+
+    // Disabled config emits empty string.
+    assert.equal(
+      renderNativeTitle(
+        { conversation_id: 'conv-native-1', agent_state: 'idle' },
+        { config: { tabTitle: false }, baseDir: dir, now: t0 + 3000, hostPid: 40384 },
+      ),
+      '',
+    );
+
+    // End-to-end stdin -> stdout stream via runTitleCommand.
+    let output = '';
+    async function* fakeStdin() {
+      yield JSON.stringify({ conversation_id: 'conv-native-1', conversation_title: '原始标题', agent_state: 'reviewing' });
+    }
+    await runTitleCommand({
+      stdin: fakeStdin(),
+      stdout: { write: (chunk) => { output += chunk; } },
+      baseDir: dir,
+      config: { tabTitle: true, tabTitleSource: 'auto', tabTitleMaxLen: 26 },
+    });
+    assert.equal(output, '? agy-bar 开源状态栏\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -97,8 +97,10 @@ test('handles epoch-zero sentinels, weekly cap blocking, and account key isolati
     assert.equal(isWeeklyBucketBlocking('gemini-5h', weeklyExhausted, now), true);
 
     // Account key hashes email (never plaintext on disk) and isolates accounts.
-    const keyA = extractAccountKey({ user_email: 'Alice@Example.com' });
-    const keyB = extractAccountKey({ user_email: 'bob@example.com' });
+    const keyA = extractAccountKey({ email: 'Alice@Example.com' });
+    const keyA2 = extractAccountKey({ user_email: 'alice@example.com' });
+    const keyB = extractAccountKey({ email: 'bob@example.com' });
+    assert.equal(keyA, keyA2);
     assert.notEqual(keyA, keyB);
     assert.ok(!keyA.includes('alice'));
 

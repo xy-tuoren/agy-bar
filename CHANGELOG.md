@@ -2,6 +2,20 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.3] - 2026-11-26
+
+### Added
+- **Official Native Antigravity CLI `title` Hook (`src/title.mjs`, `src/installer.mjs`)**:
+  - Upgraded terminal tab/window title sync to Antigravity CLI's official `settings.json` `"title"` command interface (`https://antigravity.google/docs/cli/title`) so `agy` itself drives window/tab titles cleanly on **macOS, Linux, and native Windows Terminal** with zero `/dev/tty` escape-sequence interleaving and zero `ps` subprocesses.
+  - `agy-bar install` automatically configures `settings.title` (backing up previous settings for clean `uninstall` restoration, refusing to overwrite unrelated custom `title` commands, and supporting `--no-title` opt-out); `agy-bar doctor` now verifies native title health.
+  - Uses a lightweight per-session `.title` marker so `statusline.mjs` automatically steps aside once native `title` is active while seamlessly keeping hardened `/dev/tty` fallback for un-restarted sessions.
+
+### Fixed
+- **Hardened Fallback Tab Title Sync (`src/tab-title.mjs`, `src/statusline.mjs`, `src/telemetry.mjs`)**:
+  - Ran fallback tab-title sync synchronously before async SQLite scans to prevent out-of-order `working`/`idle` races, cached `lastTabTty` for zero-`ps` direct writes with `O_NOCTTY`, widened `ps` timeout to `500ms`, and stopped persisting `lastTabTitle` on failed writes so retries happen automatically.
+- **Account Isolation Key (`src/quota-sync.mjs`)**:
+  - Included AGY's live top-level `payload.email` field when computing the non-PII SHA-1 account key for local cross-terminal quota sync.
+
 ## [0.9.2] - 2026-11-26
 
 ### Added

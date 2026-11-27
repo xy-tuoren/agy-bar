@@ -63,6 +63,7 @@ export function isWeeklyBucketBlocking(bucketId, quotaMap, now = Date.now()) {
 
 export function extractAccountKey(payload) {
   const raw =
+    payload?.email ||
     payload?.account?.email ||
     payload?.user_email ||
     payload?.account?.id ||

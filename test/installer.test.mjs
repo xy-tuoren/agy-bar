@@ -26,6 +26,12 @@ test('buildCommand generates shell-safe commands for POSIX and Windows', () => {
     winCmd,
     /^node -e import\(Buffer\.from\('[A-Za-z0-9+/=]+','base64'\)\.toString\(\)\)\.then\(function\(m\)\{m\.runStatusline\(\)\}\)$/,
   );
+
+  const winTitleCmd = buildCommand('C:\\Program Files\\node.exe', 'C:\\Users\\xy\\.gemini\\title.mjs', 'win32', 'runTitleCommand');
+  assert.match(
+    winTitleCmd,
+    /^node -e import\(Buffer\.from\('[A-Za-z0-9+/=]+','base64'\)\.toString\(\)\)\.then\(function\(m\)\{m\.runTitleCommand\(\)\}\)$/,
+  );
 });
 
 test('install, upgrade, doctor, and uninstall preserve unrelated settings and restore previous statusLine', () => {
@@ -69,6 +75,8 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
     assert.equal(afterInstall.model, 'Gemini 4 Carbon (High)');
     assert.equal(afterInstall.statusLine.enabled, true);
     assert.ok(afterInstall.statusLine.command.includes('agy-bar'));
+    assert.equal(afterInstall.title.enabled, true);
+    assert.ok(afterInstall.title.command.includes('title.mjs'));
 
     // Re-installing (upgrade) with shell hook opted in must keep the original backup ('echo old-bar').
     const upgraded = installAgyBar({
@@ -101,7 +109,38 @@ test('install, upgrade, doctor, and uninstall preserve unrelated settings and re
       command: 'echo old-bar',
       enabled: true,
     });
+    assert.equal(afterUninstall.title, undefined);
     assert.equal(afterUninstall.colorScheme, 'dark');
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('install preserves an existing unrelated settings.json title command and doctor recognizes Windows native title', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-title-preserve-'));
+  try {
+    const settingsFile = agySettingsPath(fakeHome);
+    mkdirSync(join(fakeHome, '.gemini', 'antigravity-cli'), { recursive: true });
+    writeFileSync(
+      settingsFile,
+      JSON.stringify({ title: { type: 'command', command: '~/.gemini/my-title.sh', enabled: true } }),
+    );
+
+    const installed = installAgyBar({
+      home: fakeHome,
+      executable: '/usr/local/bin/node',
+      platform: 'darwin',
+      withSkill: false,
+    });
+    assert.equal(installed.titleScriptPath, null);
+    assert.match(installed.titleWarning, /existing custom AGY title/);
+    const afterInstall = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    assert.equal(afterInstall.title.command, '~/.gemini/my-title.sh');
+
+    const removed = uninstallAgyBar({ home: fakeHome, platform: 'darwin' });
+    assert.equal(removed.uninstalled, true);
+    const afterUninstall = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    assert.equal(afterUninstall.title.command, '~/.gemini/my-title.sh');
   } finally {
     rmSync(fakeHome, { recursive: true, force: true });
   }
@@ -211,6 +250,8 @@ test('Windows install and runDoctor recognize Base64-encoded statusLine command'
     assert.equal(report.ok, true);
     const settingsCheck = report.checks.find((c) => c.name === 'AGY settings.json');
     assert.equal(settingsCheck?.ok, true);
+    const titleCheck = report.checks.find((c) => c.name === 'AGY native title');
+    assert.equal(titleCheck?.ok, true);
   } finally {
     rmSync(fakeHome, { recursive: true, force: true });
   }

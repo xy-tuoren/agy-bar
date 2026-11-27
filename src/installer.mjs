@@ -33,6 +33,10 @@ export function installedScriptPath(home = homedir()) {
   return join(installedAppDir(home), 'src', 'statusline.mjs');
 }
 
+export function installedTitleScriptPath(home = homedir()) {
+  return join(installedAppDir(home), 'src', 'title.mjs');
+}
+
 export function installedCliPath(home = homedir()) {
   return join(installedAppDir(home), 'bin', 'agy-bar.mjs');
 }
@@ -49,11 +53,11 @@ function shQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
-export function buildCommand(executable, scriptPath, platform = process.platform) {
+export function buildCommand(executable, scriptPath, platform = process.platform, exportName = 'runStatusline') {
   if (platform === 'win32') {
     // Avoid spaces, quotes, and '>' redirection operators for Windows cmd /c safety.
     const encodedUrl = Buffer.from(pathToFileURL(scriptPath).href).toString('base64');
-    return `node -e import(Buffer.from('${encodedUrl}','base64').toString()).then(function(m){m.runStatusline()})`;
+    return `node -e import(Buffer.from('${encodedUrl}','base64').toString()).then(function(m){m.${exportName}()})`;
   }
   return `${shQuote(executable)} ${shQuote(scriptPath)}`;
 }
@@ -112,6 +116,7 @@ export function isAgyBarCommand(command, backup = null) {
   if (typeof command !== 'string' || !command.trim()) return false;
   if (command.includes('agy-bar')) return true;
   if (backup?.installedCommand && command === backup.installedCommand) return true;
+  if (backup?.installedTitleCommand && command === backup.installedTitleCommand) return true;
 
   // Windows buildCommand() base64-encodes the file:// URL for cmd /c safety.
   const b64Match = /Buffer\.from\('([A-Za-z0-9+/=]+)','base64'\)/.exec(command);
@@ -159,6 +164,7 @@ export function installAgyBar({
   env = process.env,
   withSkill = true,
   withShim = true,
+  withTitle = true,
   withShellHook = false,
   shell = null,
   preset = null,
@@ -176,6 +182,7 @@ export function installAgyBar({
 
   const appDir = installedAppDir(home);
   const scriptPath = installedScriptPath(home);
+  const titleScriptPath = installedTitleScriptPath(home);
   const cliPath = installedCliPath(home);
   const settingsPath = agySettingsPath(home);
   const backupPath = backupFilePath(home);
@@ -208,19 +215,56 @@ export function installAgyBar({
 
   const settings = existsSync(settingsPath) ? readJson(settingsPath) : {};
   const existingBackup = existsSync(backupPath) ? readJson(backupPath) : null;
-  const command = buildCommand(executable, scriptPath, platform);
+  const command = buildCommand(executable, scriptPath, platform, 'runStatusline');
+  const titleCommand = buildCommand(executable, titleScriptPath, platform, 'runTitleCommand');
+
+  const existingTitleOurs = Boolean(
+    settings.title &&
+      (settings.title?.command === existingBackup?.installedTitleCommand ||
+        isAgyBarCommand(settings.title?.command, existingBackup)),
+  );
+  const hasUnrelatedTitle = Boolean(settings.title && !existingTitleOurs);
+  let titleInstalled = false;
+  let titleWarning = null;
 
   // Keep the original backup across upgrades unless the user switched away to another renderer.
-  const backup =
+  const statusLineBackup =
     existingBackup && settings.statusLine?.command === existingBackup.installedCommand
-      ? { ...existingBackup, installedCommand: command }
+      ? {
+          hadStatusLine: existingBackup.hadStatusLine,
+          statusLine: existingBackup.statusLine,
+          installedCommand: command,
+        }
       : {
           hadStatusLine: Object.hasOwn(settings, 'statusLine'),
           statusLine: settings.statusLine ?? null,
           installedCommand: command,
         };
 
-  writeJson(backupPath, backup);
+  let titleBackup;
+  if (existingBackup && Object.hasOwn(existingBackup, 'hadTitle') && existingTitleOurs) {
+    titleBackup = {
+      hadTitle: existingBackup.hadTitle,
+      title: existingBackup.title,
+      installedTitleCommand: withTitle ? titleCommand : existingBackup.installedTitleCommand ?? null,
+    };
+  } else if (withTitle && !hasUnrelatedTitle) {
+    titleBackup = {
+      hadTitle: Object.hasOwn(settings, 'title'),
+      title: settings.title ?? null,
+      installedTitleCommand: titleCommand,
+    };
+  } else if (existingBackup && Object.hasOwn(existingBackup, 'hadTitle')) {
+    titleBackup = {
+      hadTitle: existingBackup.hadTitle,
+      title: existingBackup.title,
+      installedTitleCommand: existingBackup.installedTitleCommand ?? null,
+    };
+  } else {
+    titleBackup = {};
+  }
+
+  writeJson(backupPath, { ...statusLineBackup, ...titleBackup });
 
   settings.statusLine = {
     type: 'command',
@@ -228,11 +272,28 @@ export function installAgyBar({
     enabled: true,
     stack_with_default: false,
   };
+
+  if (withTitle) {
+    if (hasUnrelatedTitle) {
+      titleWarning = 'Kept existing custom AGY title command in settings.json (pass --no-title to silence this note).';
+    } else {
+      settings.title = {
+        type: 'command',
+        command: titleCommand,
+        enabled: savedConfig.tabTitle !== false,
+      };
+      titleInstalled = true;
+    }
+  }
+
   writeJson(settingsPath, settings);
 
   return {
     installed: true,
     scriptPath,
+    titleScriptPath: titleInstalled ? titleScriptPath : null,
+    titleCommand: titleInstalled ? titleCommand : null,
+    titleWarning,
     cliPath,
     shimPath,
     shimWarning,
@@ -261,22 +322,50 @@ export function uninstallAgyBar({
   const hadApp = existsSync(appDir);
   const hadCfgDir = existsSync(cfgDir);
   let restored = false;
+  let titleRestored = false;
 
   if (hadBackup) {
     const backup = readJson(backupPath);
     if (existsSync(settingsPath)) {
       const settings = readJson(settingsPath);
+      let settingsChanged = false;
       if (settings.statusLine?.command === backup.installedCommand) {
         if (backup.hadStatusLine) {
           settings.statusLine = backup.statusLine;
         } else {
           delete settings.statusLine;
         }
-        writeJson(settingsPath, settings);
         restored = true;
+        settingsChanged = true;
+      }
+      if (
+        backup.installedTitleCommand &&
+        (settings.title?.command === backup.installedTitleCommand || isAgyBarCommand(settings.title?.command, backup))
+      ) {
+        if (backup.hadTitle) {
+          settings.title = backup.title;
+        } else {
+          delete settings.title;
+        }
+        titleRestored = true;
+        settingsChanged = true;
+      }
+      if (settingsChanged) {
+        writeJson(settingsPath, settings);
       }
     }
     rmSync(backupPath, { force: true, maxRetries: 3, retryDelay: 50 });
+  } else if (existsSync(settingsPath)) {
+    try {
+      const settings = readJson(settingsPath);
+      if (isAgyBarCommand(settings.title?.command)) {
+        delete settings.title;
+        writeJson(settingsPath, settings);
+        titleRestored = true;
+      }
+    } catch {
+      // Ignore malformed settings.json during orphan cleanup.
+    }
   }
 
   const shimRemoved = uninstallCliShim({ home, platform });
@@ -295,12 +384,13 @@ export function uninstallAgyBar({
   }
 
   const removedAnything = Boolean(
-    hadBackup || hadApp || shimRemoved || hookResult.removed || skillResult?.removed || (purge && hadCfgDir),
+    hadBackup || hadApp || shimRemoved || hookResult.removed || skillResult?.removed || titleRestored || (purge && hadCfgDir),
   );
   if (!removedAnything) {
     return {
       uninstalled: false,
       restored: false,
+      titleRestored: false,
       shimRemoved: false,
       shellHookRemoved: false,
       shellHookPaths: [],
@@ -313,6 +403,7 @@ export function uninstallAgyBar({
   return {
     uninstalled: true,
     restored,
+    titleRestored,
     shimRemoved,
     shellHookRemoved: hookResult.removed,
     shellHookPaths: hookResult.rcPaths,
@@ -329,6 +420,7 @@ export function uninstallAgyBar({
 export function runDoctor({ home = homedir(), platform = process.platform, env = process.env } = {}) {
   const settingsPath = agySettingsPath(home);
   const scriptPath = installedScriptPath(home);
+  const titleScriptPath = installedTitleScriptPath(home);
   const shimDest = cliShimPath(home, platform);
   const cfgPath = configPath(home);
   const skillPath = targetSkillPath(home);
@@ -368,6 +460,8 @@ export function runDoctor({ home = homedir(), platform = process.platform, env =
 
   let statusLineEnabled = false;
   let settingsDetail = 'settings.json not found';
+  let nativeTitleActive = false;
+  let nativeTitleDetail = 'not configured (run "agy-bar install" to enable native cross-platform tab titles)';
   let backup = null;
   const backupPath = backupFilePath(home);
   if (existsSync(backupPath)) {
@@ -388,6 +482,16 @@ export function runDoctor({ home = homedir(), platform = process.platform, env =
         : settings.statusLine
           ? `statusLine points to another command (${settings.statusLine.command || 'unknown'})`
           : 'statusLine not configured';
+
+      const titleIsOurs = isAgyBarCommand(settings.title?.command, backup);
+      nativeTitleActive = settings.title?.enabled === true && titleIsOurs && existsSync(titleScriptPath);
+      nativeTitleDetail = nativeTitleActive
+        ? 'title.enabled = true (agy-bar native title active — macOS/Linux/Windows)'
+        : titleIsOurs && settings.title?.enabled === false
+          ? 'title.enabled = false (disabled in settings.json; run "/title on" in agy)'
+          : settings.title
+            ? `title points to another command (${settings.title.command || 'unknown'})`
+            : nativeTitleDetail;
     } catch (err) {
       settingsDetail = `Failed to parse settings.json: ${err.message}`;
     }
@@ -396,6 +500,12 @@ export function runDoctor({ home = homedir(), platform = process.platform, env =
     name: 'AGY settings.json',
     ok: statusLineEnabled,
     detail: settingsDetail,
+  });
+  checks.push({
+    name: 'AGY native title',
+    ok: nativeTitleActive,
+    optional: true,
+    detail: nativeTitleDetail,
   });
 
   const skillInstalled = existsSync(skillPath);
