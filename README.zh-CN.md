@@ -4,7 +4,7 @@
 
 **专为 Antigravity CLI (`agy`) 打造的零依赖终端状态栏、原生 6 态标签页标题、免 TUN 本地代理启动器、52 周 Token 热力图与多 CLI 监视面板**
 
-[English](./README.md) | **简体中文** | [AI Agent 自动安装指南 (`AGENTS.md`)](./AGENTS.md) | [机器可读索引 (`llms.txt`)](./llms.txt)
+[English](./README.md) | **简体中文** | [AI Agent 自动安装指南 (`AGENTS.md`)](./AGENTS.md) | [机器可读索引 (`llms.txt`)](./llms.txt) | [LINUX DO](https://linux.do)
 
 [![CI](https://github.com/xy-tuoren/agy-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/xy-tuoren/agy-bar/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/agy-bar.svg)](https://www.npmjs.com/package/agy-bar)
@@ -315,6 +315,6 @@ npm run monitor     # 启动多 CLI 监控面板
 npm run doctor      # 检查本机安装状态
 ```
 
-## 开源协议
+## 开源协议与社区
 
-[MIT](./LICENSE) © [xy-tuoren](https://github.com/xy-tuoren)
+[MIT](./LICENSE) © [xy-tuoren](https://github.com/xy-tuoren) · 社区交流与友链：[LINUX DO](https://linux.do)

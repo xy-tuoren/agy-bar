@@ -4,7 +4,7 @@
 
 **Zero-dependency statusline HUD, native 6-state tab titles, no-TUN local proxy launcher, 52-week token heatmap & multi-CLI monitor for Antigravity CLI (`agy`)**
 
-**English** | [简体中文](./README.zh-CN.md) | [AI Agent Install Guide (`AGENTS.md`)](./AGENTS.md) | [Machine-Readable Index (`llms.txt`)](./llms.txt)
+**English** | [简体中文](./README.zh-CN.md) | [AI Agent Install Guide (`AGENTS.md`)](./AGENTS.md) | [Machine-Readable Index (`llms.txt`)](./llms.txt) | [LINUX DO](https://linux.do)
 
 [![CI](https://github.com/xy-tuoren/agy-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/xy-tuoren/agy-bar/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/agy-bar.svg)](https://www.npmjs.com/package/agy-bar)
@@ -315,6 +315,6 @@ npm run monitor     # Launch multi-CLI HUD
 npm run doctor      # Verify local installation
 ```
 
-## License
+## License & Community
 
-[MIT](./LICENSE) © [xy-tuoren](https://github.com/xy-tuoren)
+[MIT](./LICENSE) © [xy-tuoren](https://github.com/xy-tuoren) · Community & Discussion: [LINUX DO](https://linux.do)
