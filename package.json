@@ -39,6 +39,7 @@
   "files": [
     "AGENTS.md",
     "CHANGELOG.md",
+    "llms.txt",
     "bin/",
     "src/",
     "skills/",
