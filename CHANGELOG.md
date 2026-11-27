@@ -2,6 +2,12 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.4] - 2026-11-26
+
+### Changed
+- **Tab Title Prefix for Background Tasks (`src/agent-state.mjs`)**:
+  - Reserved the active dot (`●` / `● [N]`) strictly for an active main agent or running subagents. When the agent finishes (`agent_state: "idle"`, `subagents` idle) while only background apps/tasks (`task_count > 0`, e.g., a dev server or daemon) remain alive, the terminal tab title now cleanly shows `✓ <topic>` instead of `●`, while statusline Line 1 (`TASK N`) and `agy-bar monitor` (`task:N`) continue surfacing active background tasks.
+
 ## [0.9.3] - 2026-11-26
 
 ### Added

@@ -139,6 +139,8 @@ export function classifyAgentActivity(payload = {}) {
   }
 
   if (runningTasks > 0) {
+    // Long-running background apps/dev servers keep task_count > 0 after the agent finishes;
+    // keep tab title at ✓ (reserving ● for active main agent / subagents) while surfacing TASK N in HUD & monitor.
     return Object.freeze({
       kind: 'tasks',
       rawState,
@@ -148,7 +150,7 @@ export function classifyAgentActivity(payload = {}) {
       runningSubagents,
       runningTasks,
       confirmPending: false,
-      tabPrefix: '● ',
+      tabPrefix: '✓ ',
       statusBadge: null,
       monitorLabel: `task:${runningTasks}`,
     });

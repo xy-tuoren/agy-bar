@@ -63,12 +63,13 @@ test('classifyAgentActivity prioritizes confirmation, user input, error, working
   assert.equal(subs.tabPrefix, '● [3] ');
   assert.equal(subs.monitorLabel, 'sub:3');
 
-  // 6. Main agent idle while background tasks are running.
+  // 6. Main agent idle while background tasks (e.g. dev server / daemon) remain running:
+  // tab shows ✓ (reserving ● for active main agent / subagents), while HUD & monitor keep TASK N / task:N.
   const tasks = classifyAgentActivity({ agent_state: 'idle', task_count: 2 });
   assert.equal(tasks.kind, 'tasks');
   assert.equal(tasks.isActive, true);
   assert.equal(tasks.runningTasks, 2);
-  assert.equal(tasks.tabPrefix, '● ');
+  assert.equal(tasks.tabPrefix, '✓ ');
   assert.equal(tasks.monitorLabel, 'task:2');
 
   // 7. Startup / authenticating states never show completed checkmark.

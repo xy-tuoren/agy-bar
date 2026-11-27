@@ -70,6 +70,11 @@ test('buildTabTitle formats working/idle prefix and supports auto, dir, title+di
     buildTabTitle({ agent_state: 'authenticating', workspace: { current_dir: '/Users/dev/agy-bar' } }),
     '… agy-bar',
   );
+  // Idle agent with only a background task/dev server still shows ✓ on tab title (TASK N stays on statusline).
+  assert.equal(
+    buildTabTitle({ agent_state: 'idle', task_count: 1, conversation_title: '前端服务' }),
+    '✓ 前端服务',
+  );
 });
 
 test('formatOscTitle sanitizes control characters and wraps in OSC 0 + OSC 2 sequence', () => {
