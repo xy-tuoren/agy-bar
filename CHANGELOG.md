@@ -2,6 +2,19 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [0.9.2] - 2026-11-26
+
+### Added
+- **Cross-Terminal Local Quota Freshness Sync (`src/quota-sync.mjs`)**:
+  - Shares observed account quota snapshots locally across concurrent `agy` terminals via atomic `~/.gemini/config/agy-bar/quota-cache.json` (zero network requests, zero extra disk writes when idle, hashed non-PII account isolation).
+  - Whenever **any** `agy` terminal triggers a new 5h/7d reset window (newer `reset_time`) or consumes quota in the same window (strictly lower `remaining_fraction`), all other idle terminals and `agy-bar monitor` automatically display the freshest quota on their very next refresh instead of staying stuck on stale `0% (due)` or outdated percentages.
+- **Clearer Expired-Reset `(ready)` Indicator (`src/render.mjs`, `src/monitor.mjs`)**:
+  - When a `5h` bucket's `reset_time` has already passed (`reset_time <= now`) and the sibling `7d` weekly cap still has remaining quota, replaces alarming bold-red `0% (due)` with calm amber `0%` + green `(ready)` so you can tell at a glance that the reset point has passed and sending a message will refresh it.
+  - Keeps bold-red `0% (due)` when the sibling `7d` weekly bucket is also exhausted (`0%` and not yet due).
+
+### Fixed
+- **Epoch-Zero Reset Sentinel (`1970-01-01T00:00:00Z`)**: Stopped rendering misleading `(due)` on unused 100% buckets whose protobuf zero timestamp (`1970-01-01T00:00:00Z`) indicates the window has not started yet.
+
 ## [0.9.1] - 2026-11-26
 
 ### Added

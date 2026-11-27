@@ -412,3 +412,43 @@ test('renders CONFIRM, INPUT, ERR attention badges and TASK background task coun
   );
   assert.ok(errOut.includes('\x1b[38;2;248;113;113mERR'));
 });
+
+test('renders green (ready) with amber 0% when 5h reset passed and 7d has quota, stays red (due) if 7d is also 0%, and hides epoch-zero reset', () => {
+  const now = Date.parse('2026-11-27T03:00:00Z');
+
+  // Epoch-zero sentinel ("1970-01-01T00:00:00Z") never shows bogus (due).
+  assert.equal(formatReset({ reset_time: '1970-01-01T00:00:00Z', reset_in_seconds: 0 }, now), '');
+
+  const readyOut = renderStatusline(
+    {
+      ...fixtures.geminiNormal,
+      terminal_width: 120,
+      quota: {
+        'gemini-5h': { remaining_fraction: 0, reset_time: '2026-11-27T02:55:00Z', reset_in_seconds: 0 },
+        'gemini-weekly': { remaining_fraction: 0.65, reset_time: '2026-12-03T07:11:37Z', reset_in_seconds: 533497 },
+      },
+    },
+    { config: { theme: 'slate-dark' }, color: true, now, env: { COLORTERM: 'truecolor' } },
+  );
+  const readyLine2 = readyOut.split('\n')[1];
+  assert.match(stripAnsi(readyLine2), /5h .*0% \(ready\) │ 7d .*65%/);
+  // Amber 0% (251;191;36) + green (ready) (52;211;153) instead of alarming red.
+  assert.ok(readyLine2.includes('\x1b[38;2;251;191;36m0%'));
+  assert.ok(readyLine2.includes('\x1b[38;2;52;211;153m(ready)'));
+
+  // Blocked by exhausted weekly cap -> stays bold red 0% (due).
+  const blockedOut = renderStatusline(
+    {
+      ...fixtures.geminiNormal,
+      terminal_width: 120,
+      quota: {
+        'gemini-5h': { remaining_fraction: 0, reset_time: '2026-11-27T02:55:00Z', reset_in_seconds: 0 },
+        'gemini-weekly': { remaining_fraction: 0, reset_time: '2026-12-03T07:11:37Z', reset_in_seconds: 533497 },
+      },
+    },
+    { config: { theme: 'slate-dark' }, color: true, now, env: { COLORTERM: 'truecolor' } },
+  );
+  const blockedLine2 = blockedOut.split('\n')[1];
+  assert.match(stripAnsi(blockedLine2), /5h .*0% \(due\)/);
+  assert.ok(blockedLine2.includes('\x1b[38;2;248;113;113m0%'));
+});

@@ -41,7 +41,7 @@ CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·15
 | **Line 1 · Left** | `~/code/agy-bar (main* +142 -38) · PX 7897` | Compact `~` path (`dirStyle`), live Git diff lines (tracked + untracked text, 3s cache), active proxy port badge, plus on-demand state badges (`CONFIRM` / `INPUT` when waiting on you, `ERR`, `● 34s · esc`, `SUB N` subagents, `TASK N` background tasks, `PLAN` / `SANDBOX`, Vim `[NORMAL]`) |
 | **Line 1 · Right** | `DAY 136M/$13.2 · WK 810M · MO 875M · ALL 906M │ Model` | Calm neutral cumulative token/spend strip + active model & reasoning effort; sheds gracefully on narrow split panes |
 | **Line 2 · Left** | `CTX ▮▮▮▯▯▯▯▯ 42.6% (1.0M) │ CACHE 88%·3m42s │ TTFT 1.9s·158t/s │ ~$0.18` | Unified health context gauge (`→/compact` at danger), 5-min prompt cache TTL countdown, exact first-token latency + streaming decode speed, and live conversation spend (rolls up nested subagent costs automatically, refreshing every 20s while subagents run) |
-| **Line 2 · Right** | `5h ▮▮▮▮▮▯ 85% (2h30m) │ 7d ▮▮▮▮▯▯ 64% (3d)` | Active model pool quotas (**Gemini 4 Neon / Carbon / Hydrogen / Argon** & **Claude 3p**) with reset countdowns |
+| **Line 2 · Right** | `5h ▮▮▮▮▮▯ 85% (2h30m) │ 7d ▮▮▮▮▯▯ 64% (3d)` | Active model pool quotas (**Gemini 4 Neon / Carbon / Hydrogen / Argon** & **Claude 3p**) with live reset countdowns, local cross-terminal freshness sync, and green `(ready)` hint once a 5h reset point has passed |
 
 ---
 

@@ -185,4 +185,43 @@ test('renderMonitorFrame displays active multi-CLI sessions, CJK alignment, cost
   assert.match(multiState, /\? confirm/);
   assert.match(multiState, /● sub:4/);
   assert.match(multiState, /✗ error/);
+
+  // Monitor merges fresher quota across sessions and shows (ready) on expired 5h when 7d has quota.
+  const mergedMonitor = stripAnsi(
+    renderMonitorFrame(
+      [
+        {
+          sessionId: 's-idle',
+          updatedAt: now,
+          ageMs: 1000,
+          agentState: 'idle',
+          workspaceName: 'app-a',
+          model: 'Gemini 4 Neon',
+          usedPct: 20,
+          quota: {
+            'gemini-5h': { remaining: 0.98, reset_time: '2026-11-27T07:15:16Z' },
+            'gemini-weekly': { remaining: 0.65, reset_time: '2026-12-03T07:11:37Z' },
+          },
+        },
+        {
+          sessionId: 's-active',
+          updatedAt: now - 20_000,
+          ageMs: 20_000,
+          agentState: 'idle',
+          workspaceName: 'app-b',
+          model: 'Gemini 4 Neon',
+          usedPct: 40,
+          quota: {
+            'gemini-5h': { remaining: 0.94, reset_time: '2026-11-27T07:15:16Z' },
+            'gemini-weekly': { remaining: 0.63, reset_time: '2026-12-03T07:11:37Z' },
+            '3p-5h': { remaining: 1, reset_time: '1970-01-01T00:00:00Z', reset_in_seconds: 0 },
+          },
+        },
+      ],
+      { now: Date.parse('2026-11-27T03:00:00Z'), color: false, config: { theme: 'slate-dark', colorMode: 'health', barStyle: 'segments', cacheTtlSec: 300, contextWarn: 70, contextDanger: 88, quotaWarn: 25, quotaDanger: 10 } },
+    ),
+  );
+  assert.match(mergedMonitor, /5h .*94%/);
+  assert.match(mergedMonitor, /7d .*63%/);
+  assert.ok(!mergedMonitor.includes('(due)'));
 });

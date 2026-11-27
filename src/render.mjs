@@ -3,6 +3,7 @@ import { classifyAgentActivity, countRunningSubagents } from './agent-state.mjs'
 import { bold, clipAnsi, detectColorDepth, fg, sanitizeText, visibleWidth } from './ansi.mjs';
 import { BAR_STYLES, DEFAULT_CONFIG, normalizeConfig } from './config.mjs';
 import { formatUsd } from './pricing.mjs';
+import { isBucketResetDue, isEpochSentinelReset, isWeeklyBucketBlocking } from './quota-sync.mjs';
 import { resolvePalette } from './themes.mjs';
 
 export { countRunningSubagents };
@@ -48,6 +49,7 @@ function formatCompactUsd(amount) {
 
 export function formatReset(bucket, now = Date.now()) {
   if (!bucket || typeof bucket !== 'object') return '';
+  if (isEpochSentinelReset(bucket)) return '';
   const ts = typeof bucket.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN;
   const seconds = Number.isFinite(ts) ? (ts - now) / 1000 : nonNegNumber(bucket.reset_in_seconds);
   if (seconds === null) return '';
@@ -664,15 +666,19 @@ function buildSessionSegment(opts, config, palette, color, telemetry) {
   return fg(parts.join('·'), palette.muted, color);
 }
 
-function buildQuotaSegment(entries, opts, config, palette, color, now) {
+function buildQuotaSegment(entries, opts, config, palette, color, now, rawQuota = null) {
   if (!entries.length) return '';
   const { show, barStyle, barWidth, quotaWarn, quotaDanger } = config;
-  const parts = entries.map(({ label, bucket }) => {
+  const quotaMap = rawQuota && typeof rawQuota === 'object' ? rawQuota : Object.fromEntries(entries.map((e) => [e.id, e.bucket]));
+  const parts = entries.map(({ id, label, bucket }) => {
     const fraction = nonNegNumber(bucket.remaining_fraction);
     const amount = nonNegNumber(bucket.remaining_amount);
     const pct = fraction !== null ? Math.round(fraction * 100) : null;
     const valText = pct !== null ? `${pct}%` : amount !== null ? formatTokens(amount) : '--';
-    const tone =
+    const due = isBucketResetDue(bucket, now);
+    const blockedByWeekly = due && isWeeklyBucketBlocking(id, quotaMap, now);
+    const resetReady = due && !blockedByWeekly;
+    const baseTone =
       pct === null
         ? palette.muted
         : pct <= quotaDanger
@@ -680,6 +686,7 @@ function buildQuotaSegment(entries, opts, config, palette, color, now) {
           : pct <= quotaWarn
             ? palette.warn
             : palette.good;
+    const tone = resetReady && pct !== null && pct <= quotaDanger ? palette.warn : baseTone;
 
     const pieces = [fg(label, palette.muted, color)];
     if (opts.withQuotaBar && show.quotaBar && fraction !== null) {
@@ -695,8 +702,12 @@ function buildQuotaSegment(entries, opts, config, palette, color, now) {
     }
     pieces.push(pct !== null && pct <= quotaWarn ? bold(fg(valText, tone, color), color) : fg(valText, palette.text, color));
     if (opts.withReset && show.reset) {
-      const reset = formatReset(bucket, now);
-      if (reset) pieces.push(fg(`(${reset})`, palette.muted, color));
+      if (resetReady) {
+        pieces.push(fg('(ready)', palette.good, color));
+      } else {
+        const reset = formatReset(bucket, now);
+        if (reset) pieces.push(fg(`(${reset})`, palette.muted, color));
+      }
     }
     return pieces.join(' ');
   });
@@ -759,7 +770,7 @@ function renderMetricsRow(
     if (sessionSeg) leftParts.push(sessionSeg);
 
     const left = joinWithSep(leftParts, stage.tight ? ' ' : sep, palette, color);
-    const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now);
+    const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now, payload?.quota);
     const minGap = left && right ? 2 : 0;
     chosenLeft = left;
     chosenRight = right;

@@ -6,6 +6,7 @@ import { loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
 import { getOrRefreshUsageSummary } from './history-scan.mjs';
 import { maybeTriggerBackgroundPricingSync } from './pricing-sync.mjs';
+import { extractAccountKey, syncSharedQuota } from './quota-sync.mjs';
 import { renderFallback, renderStatusline } from './render.mjs';
 import { readLatestStepTiming } from './step-timing.mjs';
 import { syncTabTitle } from './tab-title.mjs';
@@ -27,8 +28,12 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     const payload = JSON.parse(raw);
     const now = Date.now();
     maybeCaptureRedactedPayload(payload);
-    const prevSession = peekSessionState(payload);
-    const cwd = payload?.workspace?.current_dir || payload?.cwd || null;
+    const syncedQuota = payload?.quota
+      ? syncSharedQuota(payload.quota, { now, accountKey: extractAccountKey(payload) })
+      : null;
+    const effectivePayload = syncedQuota && syncedQuota !== payload.quota ? { ...payload, quota: syncedQuota } : payload;
+    const prevSession = peekSessionState(effectivePayload);
+    const cwd = effectivePayload?.workspace?.current_dir || effectivePayload?.cwd || null;
     const wantGitStatus = Boolean(config.show.gitDirty || config.show.gitDiff);
     const canReuseGitStatus = Boolean(
       wantGitStatus &&
@@ -51,9 +56,9 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
           })
         : null;
     const stepTiming = config.dbTiming
-      ? await readLatestStepTiming(payload, { prevDbStamp: prevSession?.dbStamp ?? null })
+      ? await readLatestStepTiming(effectivePayload, { prevDbStamp: prevSession?.dbStamp ?? null })
       : null;
-    const telemetry = recordTelemetry(payload, {
+    const telemetry = recordTelemetry(effectivePayload, {
       now,
       git,
       stepTiming,
@@ -62,7 +67,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       enableLedger: config.ledger,
     });
 
-    const activity = classifyAgentActivity(payload);
+    const activity = classifyAgentActivity(effectivePayload);
     let usageSummary = null;
     if (
       config.show.todayTokens ||
@@ -82,7 +87,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       });
     }
 
-    const nativeCostUsd = extractNativeCostUsd(payload);
+    const nativeCostUsd = extractNativeCostUsd(effectivePayload);
     const effectiveSessionCostUsd = Math.max(telemetry.sessionCostUsd || 0, usageSummary?.sessionCostUsd || 0, nativeCostUsd || 0);
     const effectiveTelemetry =
       effectiveSessionCostUsd !== telemetry.sessionCostUsd
@@ -90,7 +95,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
         : telemetry;
 
     if (!plain && config.tabTitle) {
-      const tab = syncTabTitle(payload, {
+      const tab = syncTabTitle(effectivePayload, {
         config,
         git,
         customTitle: telemetry.customTitle,
@@ -108,7 +113,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       maybeTriggerBackgroundPricingSync({ enabled: true, now, env });
     }
 
-    const rendered = renderStatusline(payload, {
+    const rendered = renderStatusline(effectivePayload, {
       config,
       now,
       color,

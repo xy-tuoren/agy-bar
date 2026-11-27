@@ -1,6 +1,7 @@
 import { bold, clipPlain, detectColorDepth, fg, visibleWidth } from './ansi.mjs';
 import { loadConfig } from './config.mjs';
 import { formatUsd } from './pricing.mjs';
+import { isBucketResetDue, isWeeklyBucketBlocking, mergeQuotaSnapshots, readSharedQuota } from './quota-sync.mjs';
 import { formatReset, formatTtft, renderBar } from './render.mjs';
 import { listSessions } from './telemetry.mjs';
 import { resolvePalette } from './themes.mjs';
@@ -108,7 +109,7 @@ function describeMonitorState(session, p, useColor) {
 
 export function renderMonitorFrame(
   sessions,
-  { now = Date.now(), config = loadConfig(), color = true, env = process.env, columns = process.stdout.columns || 98 } = {},
+  { now = Date.now(), config = loadConfig(), color = true, env = process.env, columns = process.stdout.columns || 98, sharedQuota = null } = {},
 ) {
   const resolved = resolvePalette(config.theme, { env });
   const colorDepth = detectColorDepth(env);
@@ -126,17 +127,33 @@ export function renderMonitorFrame(
   );
   lines.push(fg('─'.repeat(ruleWidth), p.sep, useColor));
 
-  // Show latest observed global quota from most recent session that has quota data.
-  const latestQuota = sessions.find((s) => s.quota)?.quota;
+  // Merge quota across shared cache + all sessions so the freshest reset window and usage always win.
+  const latestQuota = mergeQuotaSnapshots(
+    [sharedQuota, ...sessions.map((s) => ({ quota: s.quota, observedAt: s.updatedAt }))],
+    now,
+  );
   if (latestQuota) {
+    const labelOrder = Object.keys(QUOTA_LABELS);
+    const sortedEntries = Object.entries(latestQuota).sort(([a], [b]) => {
+      const ia = labelOrder.indexOf(a);
+      const ib = labelOrder.indexOf(b);
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b);
+    });
     const qItems = [];
-    for (const [id, q] of Object.entries(latestQuota)) {
-      const pct = Math.round(q.remaining * 100);
-      const tone = pct <= config.quotaDanger ? p.danger : pct <= config.quotaWarn ? p.warn : p.good;
-      const bar = renderBar(q.remaining, { width: 6, style: config.barStyle, fillColor: tone, trackColor: p.track, color: useColor });
-      const reset = formatReset(q, now);
+    for (const [id, q] of sortedEntries) {
+      const frac = typeof q.remaining_fraction === 'number' ? q.remaining_fraction : q.remaining;
+      if (typeof frac !== 'number') continue;
+      const pct = Math.round(frac * 100);
+      const due = isBucketResetDue(q, now);
+      const blockedByWeekly = due && isWeeklyBucketBlocking(id, latestQuota, now);
+      const resetReady = due && !blockedByWeekly;
+      const rawTone = pct <= config.quotaDanger ? p.danger : pct <= config.quotaWarn ? p.warn : p.good;
+      const tone = resetReady && pct <= config.quotaDanger ? p.warn : rawTone;
+      const bar = renderBar(frac, { width: 6, style: config.barStyle, fillColor: tone, trackColor: p.track, color: useColor });
+      const resetText = resetReady ? 'ready' : formatReset(q, now);
+      const resetPart = resetText ? fg(` (${resetText})`, resetReady ? p.good : p.muted, useColor) : '';
       const label = QUOTA_LABELS[id] || id;
-      qItems.push(`${fg(label, p.muted, useColor)} ${bar} ${fg(`${pct}%`, tone, useColor)}${reset ? fg(` (${reset})`, p.muted, useColor) : ''}`);
+      qItems.push(`${fg(label, p.muted, useColor)} ${bar} ${fg(`${pct}%`, tone, useColor)}${resetPart}`);
     }
     if (qItems.length > 0) {
       lines.push(`${fg('Quota: ', p.muted, useColor)}${qItems.join(fg(' │ ', p.sep, useColor))}`);
@@ -205,9 +222,11 @@ export function renderMonitorFrame(
 
 export async function startMonitor({ intervalMs = 1000, once = false, color = true, baseDir } = {}) {
   const renderOnce = () => {
+    const now = Date.now();
     const config = loadConfig();
-    const sessions = listSessions({ baseDir, prune: true });
-    return renderMonitorFrame(sessions, { config, color });
+    const sessions = listSessions({ baseDir, now, prune: true });
+    const sharedQuota = readSharedQuota({ baseDir, now })?.buckets || null;
+    return renderMonitorFrame(sessions, { now, config, color, sharedQuota });
   };
 
   if (once || !process.stdout.isTTY) {
