@@ -2,6 +2,20 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [1.0.0] - 2026-11-27
+
+First stable release of **agy-bar** — zero-dependency statusline HUD, native AGY window/tab title hook, no-TUN local proxy launcher, 52-week token heatmap, live 3-tier pricing cache, and multi-CLI monitor for Antigravity CLI (`agy`).
+
+### Added & Improved
+- **Multi-Tab Custom Title Targeting (`bin/agy-bar.mjs`, `src/telemetry.mjs`, `src/title.mjs`)**:
+  - `agy-bar title` now matches the invoking terminal's host `agy` PID (across both `lastTabHostPid` and native `.title` markers) before falling back to most-recent session, preventing accidental cross-tab renames when multiple `agy` sessions run concurrently.
+  - `agy-bar title` inspection output now reports `nativeTitleActive` and always displays the live computed `activeTabTitle`.
+- **CI Native Title Smoke Verification (`.github/workflows/ci.yml`)**:
+  - Added cross-platform `src/title.mjs` smoke verification to the 9-job macOS / Linux / Windows × Node 20 / 22 / 24 CI matrix.
+- **v1.0.0 Documentation & Showcase Polish (`README.md`, `README.zh-CN.md`, `AGENTS.md`, `skills/agy-bar/SKILL.md`, `assets/monitor-preview.svg`)**:
+  - Updated `monitor-preview.svg` to showcase live multi-state tracking (`working`, `sub:3`, `? confirm`, `idle`).
+  - Aligned Windows native title documentation, test counts (`87` tests), `npx -y agy-bar@latest install` guidance, Ghostty title tips, and npm Provenance badge across English & Chinese READMEs.
+
 ## [0.9.5] - 2026-11-26
 
 ### Added

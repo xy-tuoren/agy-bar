@@ -34,6 +34,7 @@ agy-bar <command>   # installed at ~/.local/bin/agy-bar (or: node ~/.gemini/conf
 | Multi-CLI live monitor | `agy-bar monitor [--once]` |
 | Redacted payload debug | `agy-bar debug --capture` then `agy-bar debug` |
 | Preview / Diagnostics | `agy-bar preview --scenario all` / `agy-bar doctor` |
+| Full uninstall + live shell cleanup | `eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"` |
 
 ## Toggleable Items
 

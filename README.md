@@ -8,6 +8,7 @@
 
 [![CI](https://github.com/xy-tuoren/agy-bar/actions/workflows/ci.yml/badge.svg)](https://github.com/xy-tuoren/agy-bar/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/agy-bar.svg)](https://www.npmjs.com/package/agy-bar)
+[![Provenance](https://img.shields.io/badge/npm-provenance-brightgreen.svg)](https://www.npmjs.com/package/agy-bar)
 [![Node >= 20](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen.svg)](https://nodejs.org/)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-blue.svg)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
@@ -16,13 +17,13 @@
 
 ![agy-bar live Ghostty terminal screenshot](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/live-statusline.png)
 
-<sub>Real Ghostty capture: 10 running subagents (`⚡10`), live Git diff (`+14.3K -803`), no-TUN proxy (`PX 7897`), 1.01B cumulative tokens, 99% prompt cache TTL, TTFT & speed, live conversation spend, and 5h/7d quotas.</sub>
+<sub>Real Ghostty capture: 10 running subagents (displayed as `SUB 10` in v1.0+), live Git diff (`+14.3K -803`), no-TUN proxy (`PX 7897`), 1.01B cumulative tokens, 99% prompt cache TTL, TTFT & speed, live conversation spend, and 5h/7d quotas.</sub>
 
 ![agy-bar true-color statusline preview](https://raw.githubusercontent.com/xy-tuoren/agy-bar/main/assets/preview.svg)
 
 ```sh
 # Install in one command (Node.js >= 20, zero dependencies)
-npx agy-bar install
+npx -y agy-bar@latest install
 ```
 
 ---
@@ -93,6 +94,7 @@ Replaces identical `agy --dangerously-skip-permissions` tabs across Ghostty, iTe
 > ```text
 > When the user starts a clearly new task/topic in a long session, silently run `agy-bar title "<4-8 word concise topic>"` once to keep the terminal tab title up to date.
 > ```
+> *Ghostty tip*: prefer `agy-bar title "..."` over right-clicking **Change Title…** in Ghostty, which sets a manual `tabOverride` and blocks dynamic `●` / `✓` updates until cleared.
 
 ---
 
@@ -114,7 +116,7 @@ Requires **Node.js >= 20.0.0** and **Antigravity CLI (`agy`)**.
 ### Option 1: Via `npx` (Fastest)
 
 ```sh
-npx agy-bar install
+npx -y agy-bar@latest install
 ```
 
 ### Option 2: Let `agy` install it for you
@@ -133,7 +135,7 @@ cd ~/agy-bar
 node bin/agy-bar.mjs install
 ```
 
-Then **restart `agy`** to activate the statusline (in an existing session, run `/skills reload` to load `/agy-bar`). `install` also places the global `agy-bar` command at `~/.local/bin/agy-bar` and safely backs up your previous `statusLine`. Pass `--no-skill` to skip installing the companion `/agy-bar` skill.
+Then **restart `agy`** to activate the statusline and native `title` hook (in an existing session, run `/skills reload` to load `/agy-bar`). `install` places the global `agy-bar` command at `~/.local/bin/agy-bar`, safely backs up your previous `statusLine` / `title` settings (never overwriting unrelated custom `title` scripts), and leaves `~/.zshrc` untouched unless you opt into the proxy hook. Pass `--no-skill` or `--no-title` to opt out of either component.
 
 ---
 
@@ -202,18 +204,18 @@ agy-bar config reset
 
 - **Truecolor & 256-Color Auto-Adaptation**: Emits 24-bit Truecolor in Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp, VS Code, and Windows Terminal; automatically downscales to nearest xterm-256 colors in macOS `Terminal.app` (`Apple_Terminal`) and `tmux` / `screen` / SSH without `COLORTERM=truecolor`; honors `NO_COLOR` and `TERM=dumb`.
 - **Light & Dark Themes**: Automatically adapts both statusline palettes and `agy-bar stats` heatmap ramps for light and dark backgrounds.
-- **Windows Notes**: Supported on Windows Terminal, PowerShell 7 (`pwsh`), Windows PowerShell 5.1, and `cmd.exe` (including `.cmd` shims, Windows system proxy detection, and 5-min cached dark/light theme detection). Automatic OSC tab title sync is macOS/Linux/WSL only and is safely skipped on native Windows. On older ConHost fonts missing `▮`, switch with `agy-bar config bar-style squares` or `blocks`.
+- **Windows Notes**: Supported on Windows Terminal, PowerShell 7 (`pwsh`), Windows PowerShell 5.1, and `cmd.exe` (including `.cmd` shims, native AGY `title` hook for Windows Terminal tabs, Windows system proxy detection, and 5-min cached dark/light theme detection; only the legacy OSC `/dev/tty` fallback is POSIX-only). On older ConHost fonts missing `▮`, switch with `agy-bar config bar-style squares` or `blocks`.
 
 ---
 
 ## Update & Uninstall
 
 ```sh
-# Update (preserves config, ledger, pricing cache & original statusLine backup)
-npx agy-bar@latest install
+# Update (preserves config, ledger, pricing cache & original statusLine/title backup)
+npx -y agy-bar@latest install
 
-# Uninstall & restore previous statusLine + remove managed shell hook cleanly
-npx agy-bar uninstall            # or: agy-bar uninstall
+# Uninstall & restore previous statusLine/title + remove managed shell hook cleanly
+npx -y agy-bar@latest uninstall  # or: agy-bar uninstall
 
 # Complete cleanup including current terminal's proxy env vars & agy() function (zsh/bash):
 eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
@@ -224,7 +226,7 @@ eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
 ## Development
 
 ```sh
-npm test            # Cross-platform Node.js built-in test suite (75 tests)
+npm test            # Cross-platform Node.js built-in test suite (87 tests)
 npm run preview     # Render live terminal preview
 npm run preview:svg # Regenerate all 5 showcase SVGs in assets/
 npm run stats       # Show local usage stats

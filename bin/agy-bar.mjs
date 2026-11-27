@@ -64,9 +64,17 @@ import {
 } from '../src/shell-hook.mjs';
 import { aggregateStats, formatStatsReport, HEATMAP_PALETTE_NAMES, PERIOD_NAMES, readLedger, SOURCE_NAMES } from '../src/stats.mjs';
 import { runStatusline } from '../src/statusline.mjs';
-import { buildTabTitle, writeOscTitle } from '../src/tab-title.mjs';
-import { armPayloadCapture, listSessions, readCapturedPayload, setSessionCustomTitle, updateSessionTabTitle } from '../src/telemetry.mjs';
+import { buildTabTitle, resolveTerminalTarget, writeOscTitle } from '../src/tab-title.mjs';
+import {
+  armPayloadCapture,
+  findSessionForHost,
+  listSessions,
+  readCapturedPayload,
+  setSessionCustomTitle,
+  updateSessionTabTitle,
+} from '../src/telemetry.mjs';
 import { THEME_NAMES } from '../src/themes.mjs';
+import { isNativeTitleActive } from '../src/title.mjs';
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
 
@@ -432,22 +440,43 @@ export async function main(argv = process.argv.slice(2)) {
   if (command === 'title') {
     const { flags, positional } = parseFlags(rest);
     const cfg = loadConfig();
+    const hostTarget = flags.session ? null : resolveTerminalTarget();
+    const hostPid = hostTarget?.hostPid ?? null;
     if (!flags.clear && positional.length === 0) {
       const recent = listSessions();
-      const target = flags.session ? recent.find((s) => s.sessionId === flags.session) : recent[0];
+      const target = flags.session
+        ? recent.find((s) => s.sessionId === flags.session)
+        : findSessionForHost(recent, hostPid);
       if (!target) {
         console.log('No active agy-bar session found yet.');
         return;
       }
+      const nativeTitleActive = isNativeTitleActive(target.sessionId, { hostPid: hostPid ?? process.ppid });
+      const computedTitle = buildTabTitle(
+        {
+          agent_state: target.agentState,
+          subagents: target.runningSubagents || 0,
+          task_count: target.runningTasks || 0,
+          tool_confirmation_pending: Boolean(target.toolConfirmationPending),
+          conversation_title: target.conversationTitle,
+          cwd: target.cwd,
+        },
+        {
+          config: cfg,
+          git: target.branch ? { branch: target.branch, dirty: target.dirty } : null,
+          customTitle: target.customTitle,
+        },
+      );
       console.log(
         JSON.stringify(
           {
             sessionId: target.sessionId,
             tabTitleEnabled: cfg.tabTitle,
+            nativeTitleActive,
             source: cfg.tabTitleSource,
             customTitle: target.customTitle || null,
             conversationTitle: target.conversationTitle || null,
-            activeTabTitle: target.lastTabTitle || null,
+            activeTabTitle: (nativeTitleActive ? computedTitle : target.lastTabTitle || computedTitle) || null,
           },
           null,
           2,
@@ -459,6 +488,7 @@ export async function main(argv = process.argv.slice(2)) {
     const rawText = positional.join(' ').trim();
     const updated = setSessionCustomTitle(rawText, {
       sessionId: flags.session || null,
+      hostPid,
       clear: Boolean(flags.clear),
     });
     const renderedTitle = buildTabTitle(

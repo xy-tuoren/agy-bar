@@ -284,8 +284,19 @@ test('native AGY title command renders single-line state titles, respects custom
       stdout: { write: (chunk) => { output += chunk; } },
       baseDir: dir,
       config: { tabTitle: true, tabTitleSource: 'auto', tabTitleMaxLen: 26 },
+      now: t0 + 4000,
+      hostPid: 40384,
     });
     assert.equal(output, '? agy-bar 开源状态栏\n');
+
+    // Multi-tab custom title targeting prefers matching hostPid even when another session updated more recently.
+    recordTelemetry(
+      { conversation_id: 'conv-other-tab', conversation_title: '另一标签页', agent_state: 'working' },
+      { now: t0 + 9_000, baseDir: dir, tabSync: { changed: true, written: true, title: '● 另一标签页', hostPid: 99999, tty: '/dev/ttys009', error: null } },
+    );
+    const targeted = setSessionCustomTitle('锁定本标签', { hostPid: 40384, baseDir: dir, now: t0 + 10_000 });
+    assert.equal(targeted.sessionId, 'conv-native-1');
+    assert.equal(targeted.customTitle, '锁定本标签');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

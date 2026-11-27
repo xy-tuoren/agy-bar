@@ -512,16 +512,39 @@ export function updateSessionTabTitle(
   }
 }
 
+function readNativeTitlePid(sessionId, baseDir) {
+  const markerPath = join(sessionsDir(baseDir), `${sessionId}.title`);
+  if (!existsSync(markerPath)) return null;
+  try {
+    const [, rawPid] = readFileSync(markerPath, 'utf8').trim().split(':');
+    const pid = Number(rawPid);
+    return Number.isFinite(pid) && pid > 1 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+export function findSessionForHost(sessions, hostPid, { baseDir = configDir(homedir()) } = {}) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return null;
+  if (typeof hostPid === 'number' && hostPid > 1) {
+    const byTabPid = sessions.find((s) => s.lastTabHostPid === hostPid);
+    if (byTabPid) return byTabPid;
+    const byNativeMarker = sessions.find((s) => readNativeTitlePid(s.sessionId, baseDir) === hostPid);
+    if (byNativeMarker) return byNativeMarker;
+  }
+  return sessions[0];
+}
+
 export function setSessionCustomTitle(
   title,
-  { sessionId = null, baseDir = configDir(homedir()), now = Date.now(), clear = false } = {},
+  { sessionId = null, hostPid = null, baseDir = configDir(homedir()), now = Date.now(), clear = false } = {},
 ) {
   const sDir = sessionsDir(baseDir);
   let targetId = sessionId ? String(sessionId).trim().replace(/[^a-zA-Z0-9_-]/g, '') : null;
 
   if (!targetId) {
     const recent = listSessions({ baseDir, now });
-    targetId = recent[0]?.sessionId || 'default';
+    targetId = findSessionForHost(recent, hostPid, { baseDir })?.sessionId || 'default';
   }
 
   const sFile = join(sDir, `${targetId}.json`);

@@ -15,6 +15,21 @@ export function nativeTitleMarkerPath(sessionId, baseDir = configDir(homedir()))
   return join(sessionsDir(baseDir), `${sessionId}.title`);
 }
 
+export function readNativeTitleMarker(sessionId, baseDir = configDir(homedir())) {
+  if (!sessionId) return null;
+  const markerPath = nativeTitleMarkerPath(sessionId, baseDir);
+  if (!existsSync(markerPath)) return null;
+  try {
+    const [rawTs, rawPid] = readFileSync(markerPath, 'utf8').trim().split(':');
+    const ts = Number(rawTs);
+    const pid = Number(rawPid);
+    if (!Number.isFinite(ts) || ts <= 0) return null;
+    return { ts, pid: Number.isFinite(pid) && pid > 1 ? pid : null };
+  } catch {
+    return null;
+  }
+}
+
 export function touchNativeTitleMarker(
   sessionId,
   { now = Date.now(), hostPid = process.ppid, baseDir = configDir(homedir()) } = {},
@@ -22,18 +37,9 @@ export function touchNativeTitleMarker(
   if (!sessionId) return false;
   const markerPath = nativeTitleMarkerPath(sessionId, baseDir);
   try {
-    if (existsSync(markerPath)) {
-      const [rawTs, rawPid] = readFileSync(markerPath, 'utf8').trim().split(':');
-      const prevTs = Number(rawTs);
-      const prevPid = Number(rawPid);
-      if (
-        Number.isFinite(prevTs) &&
-        now - prevTs < NATIVE_TITLE_TOUCH_INTERVAL_MS &&
-        Number.isFinite(prevPid) &&
-        prevPid === hostPid
-      ) {
-        return true;
-      }
+    const prev = readNativeTitleMarker(sessionId, baseDir);
+    if (prev && now - prev.ts < NATIVE_TITLE_TOUCH_INTERVAL_MS && prev.pid === hostPid) {
+      return true;
     }
     mkdirSync(dirname(markerPath), { recursive: true });
     writeFileSync(markerPath, `${now}:${Number.isFinite(hostPid) ? hostPid : 0}\n`, 'utf8');
@@ -47,24 +53,14 @@ export function isNativeTitleActive(
   sessionId,
   { now = Date.now(), hostPid = process.ppid, baseDir = configDir(homedir()) } = {},
 ) {
-  if (!sessionId) return false;
-  const markerPath = nativeTitleMarkerPath(sessionId, baseDir);
-  if (!existsSync(markerPath)) return false;
-  try {
-    const [rawTs, rawPid] = readFileSync(markerPath, 'utf8').trim().split(':');
-    const ts = Number(rawTs);
-    const pid = Number(rawPid);
-    if (!Number.isFinite(ts) || ts <= 0) return false;
-    const ageMs = now - ts;
-    if (ageMs < 0) return true;
-    if (ageMs < NATIVE_TITLE_FRESH_MS) return true;
-    if (ageMs < 24 * 60 * 60 * 1000 && Number.isFinite(pid) && pid > 1 && typeof hostPid === 'number' && pid === hostPid) {
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
+  const marker = readNativeTitleMarker(sessionId, baseDir);
+  if (!marker) return false;
+  const ageMs = now - marker.ts;
+  if (ageMs < 0 || ageMs < NATIVE_TITLE_FRESH_MS) return true;
+  if (ageMs < 24 * 60 * 60 * 1000 && marker.pid !== null && typeof hostPid === 'number' && marker.pid === hostPid) {
+    return true;
   }
+  return false;
 }
 
 export function renderNativeTitle(
@@ -104,6 +100,8 @@ export async function runTitleCommand({
   stdout = process.stdout,
   baseDir = configDir(homedir()),
   config = undefined,
+  now = Date.now(),
+  hostPid = process.ppid,
 } = {}) {
   let raw = '';
   for await (const chunk of stdin) {
@@ -113,7 +111,7 @@ export async function runTitleCommand({
   try {
     const payload = raw.trim() ? JSON.parse(raw) : {};
     const cfg = config ?? loadConfig();
-    const title = renderNativeTitle(payload, { config: cfg, baseDir });
+    const title = renderNativeTitle(payload, { config: cfg, baseDir, now, hostPid });
     if (title) {
       stdout.write(`${title}\n`);
     }

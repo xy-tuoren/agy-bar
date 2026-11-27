@@ -38,3 +38,4 @@ jobs:
           node bin/agy-bar.mjs pricing show --json
           node bin/agy-bar.mjs proxy status --json
           node bin/agy-bar.mjs proxy env
+          node -e "import('./src/title.mjs').then(({ renderNativeTitle }) => { const out = renderNativeTitle({ conversation_id: 'ci-smoke', conversation_title: 'CI Check', agent_state: 'idle' }, { touchMarker: false }); if (out !== '✓ CI Check') { console.error('Unexpected title:', out); process.exit(1); } console.log('title smoke:', out); })"
