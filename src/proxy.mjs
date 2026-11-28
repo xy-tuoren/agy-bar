@@ -640,6 +640,9 @@ export function parseRunArgs(args = []) {
     agyBin: null,
     quiet: false,
     fromHook: false,
+    autoSwitch: null,
+    autoHandoff: null,
+    family: null,
   };
   const agyArgs = [];
 
@@ -662,6 +665,40 @@ export function parseRunArgs(args = []) {
     }
     if (arg === '--from-hook') {
       options.fromHook = true;
+      i += 1;
+      continue;
+    }
+    if (arg === '--auto-switch') {
+      options.autoSwitch = true;
+      i += 1;
+      continue;
+    }
+    if (arg === '--no-auto-switch') {
+      options.autoSwitch = false;
+      i += 1;
+      continue;
+    }
+    if (arg === '--auto-handoff') {
+      options.autoHandoff = true;
+      i += 1;
+      continue;
+    }
+    if (arg === '--no-auto-handoff') {
+      options.autoHandoff = false;
+      i += 1;
+      continue;
+    }
+    if (arg === '--family') {
+      const value = args[i + 1];
+      if (!value) throw new Error('Missing value for --family (auto | gemini | claude)');
+      options.family = value.toLowerCase();
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('--family=')) {
+      const value = arg.slice('--family='.length);
+      if (!value) throw new Error('Missing value for --family=');
+      options.family = value.toLowerCase();
       i += 1;
       continue;
     }
@@ -702,6 +739,24 @@ export function parseRunArgs(args = []) {
   return { options, agyArgs };
 }
 
+export function buildHandoffResumeArgs(originalAgyArgs = [], promptText) {
+  const preserved = [];
+  const skipValueFlags = new Set(['-r', '--resume', '--conversation', '-i', '--prompt-interactive', '-p', '--print', '--prompt']);
+  const skipBoolFlags = new Set(['-c', '--continue']);
+  for (let i = 0; i < originalAgyArgs.length; i++) {
+    const arg = originalAgyArgs[i];
+    if (skipBoolFlags.has(arg)) continue;
+    if (skipValueFlags.has(arg)) {
+      i += 1;
+      continue;
+    }
+    if ([...skipValueFlags].some((f) => arg.startsWith(`${f}=`))) continue;
+    preserved.push(arg);
+  }
+  preserved.push('-i', promptText);
+  return preserved;
+}
+
 export async function launchAgyWithProxy(
   rawArgs = [],
   {
@@ -712,6 +767,11 @@ export async function launchAgyWithProxy(
     probePort = checkLocalPort,
     spawnFn = spawn,
     stderr = process.stderr,
+    syncAccount = null,
+    autoSwitchAccount = null,
+    autoHandoffHook = null,
+    minAutoHandoffRunMs = 3000,
+    maxAutoHandoffHops = 5,
   } = {},
 ) {
   if (env.AGY_BAR_PROXY_WRAPPER === '1') {
@@ -724,6 +784,35 @@ export async function launchAgyWithProxy(
   const envNoProxy = /^(?:1|true|yes)$/i.test(String(env.AGY_BAR_NO_PROXY || '').trim());
   const noProxy = options.noProxy || envNoProxy;
   const executable = options.agyBin || env.AGY_BIN || 'agy';
+
+  // Multi-terminal drift guard: no-op (<0.1ms) unless user has activated agy-bar accounts.
+  if (typeof syncAccount === 'function') {
+    try {
+      const syncRes = syncAccount();
+      if (syncRes?.synced && !options.quiet) {
+        const msg = syncRes.repairedFrom
+          ? `agy-bar: restored active account "${syncRes.alias}" (saved refreshed token for "${syncRes.repairedFrom}")\n`
+          : `agy-bar: synced active account "${syncRes.alias}"\n`;
+        stderr.write(msg);
+      }
+    } catch {
+      // Never block launching agy if account sync encounters an unexpected error.
+    }
+  }
+
+  // Optional pre-launch auto-switch when active account is already LIMITED.
+  if (typeof autoSwitchAccount === 'function') {
+    try {
+      const swRes = autoSwitchAccount({ family: options.family || 'auto' });
+      if (swRes?.switched && !options.quiet) {
+        stderr.write(
+          `agy-bar: active account "${swRes.fromAlias}" is LIMITED — auto-switched -> "${swRes.toAlias}"\n`,
+        );
+      }
+    } catch {
+      // Never block launching agy due to auto-switch errors.
+    }
+  }
 
   const resolved = await resolveEffectiveProxy(proxyConfig, {
     overrideUrl: options.proxyUrl,
@@ -769,61 +858,113 @@ export async function launchAgyWithProxy(
   const childEnv = buildProxyEnv(resolved, env, { stripExisting: noProxy });
   childEnv.AGY_BAR_PROXY_WRAPPER = '1';
   const target = resolveSpawnTarget(executable, { platform, env });
+  const isPrintMode = agyArgs.some((a) => a === '-p' || a === '--print' || a === '--prompt' || a.startsWith('--print=') || a.startsWith('--prompt='));
 
-  return new Promise((resolve, reject) => {
-    const child = spawnFn(target.command, agyArgs, {
-      stdio: 'inherit',
-      env: childEnv,
-      shell: target.shell,
-    });
+  const spawnOnce = (currentArgs) =>
+    new Promise((resolveChild, rejectChild) => {
+      const child = spawnFn(target.command, currentArgs, {
+        stdio: 'inherit',
+        env: childEnv,
+        shell: target.shell,
+      });
 
-    // Forward termination signals; let child TUI own interactive Ctrl+C (SIGINT).
-    const onSigInt = () => {};
-    const onSigTerm = () => {
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        // Ignore if already exited.
-      }
-    };
-    const onSigHup = () => {
-      try {
-        child.kill('SIGHUP');
-      } catch {
-        // Ignore if already exited.
-      }
-    };
+      // Forward termination signals; let child TUI own interactive Ctrl+C (SIGINT).
+      const onSigInt = () => {};
+      const onSigTerm = () => {
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // Ignore if already exited.
+        }
+      };
+      const onSigHup = () => {
+        try {
+          child.kill('SIGHUP');
+        } catch {
+          // Ignore if already exited.
+        }
+      };
 
-    process.on('SIGINT', onSigInt);
-    process.on('SIGTERM', onSigTerm);
-    if (platform !== 'win32') process.on('SIGHUP', onSigHup);
+      process.on('SIGINT', onSigInt);
+      process.on('SIGTERM', onSigTerm);
+      if (platform !== 'win32') process.on('SIGHUP', onSigHup);
 
-    const cleanup = () => {
-      process.off('SIGINT', onSigInt);
-      process.off('SIGTERM', onSigTerm);
-      if (platform !== 'win32') process.off('SIGHUP', onSigHup);
-    };
+      const cleanup = () => {
+        process.off('SIGINT', onSigInt);
+        process.off('SIGTERM', onSigTerm);
+        if (platform !== 'win32') process.off('SIGHUP', onSigHup);
+      };
 
-    child.once('error', (err) => {
-      cleanup();
-      if (err?.code === 'ENOENT') {
-        reject(
-          new Error(
-            `Could not find "${executable}" in PATH. Ensure Antigravity CLI (agy) is installed or pass --agy-bin <path>.`,
-          ),
-        );
-        return;
-      }
-      reject(err);
-    });
+      child.once('error', (err) => {
+        cleanup();
+        if (err?.code === 'ENOENT') {
+          rejectChild(
+            new Error(
+              `Could not find "${executable}" in PATH. Ensure Antigravity CLI (agy) is installed or pass --agy-bin <path>.`,
+            ),
+          );
+          return;
+        }
+        rejectChild(err);
+      });
 
-    child.once('exit', (code, signal) => {
-      cleanup();
-      resolve({
-        exitCode: typeof code === 'number' ? code : signal ? 128 : 0,
-        signal: signal || null,
-        proxy: resolved,
+      child.once('exit', (code, signal) => {
+        cleanup();
+        resolveChild({
+          exitCode: typeof code === 'number' ? code : signal ? 128 : 0,
+          signal: signal || null,
+        });
       });
     });
-  });
+
+  let currentArgs = agyArgs;
+  let hops = 0;
+
+  while (true) {
+    const startedAt = Date.now();
+    const res = await spawnOnce(currentArgs);
+    const elapsedMs = Date.now() - startedAt;
+
+    const canAttemptHandoff =
+      typeof autoHandoffHook === 'function' &&
+      !isPrintMode &&
+      hops < maxAutoHandoffHops &&
+      elapsedMs >= minAutoHandoffRunMs &&
+      res.signal !== 'SIGTERM' &&
+      res.signal !== 'SIGHUP';
+
+    if (canAttemptHandoff) {
+      let nextHop = null;
+      try {
+        nextHop = await autoHandoffHook({
+          exitCode: res.exitCode,
+          signal: res.signal,
+          startedAt,
+          elapsedMs,
+          hop: hops,
+          family: options.family || null,
+        });
+      } catch {
+        nextHop = null;
+      }
+
+      if (nextHop?.resume && nextHop.prompt) {
+        hops += 1;
+        if (!options.quiet) {
+          stderr.write(
+            `agy-bar: "${nextHop.fromAlias}" hit ${nextHop.family || 'quota'} limit — switched -> "${nextHop.toAlias}" and resuming with handoff (${hops}/${maxAutoHandoffHops})...\n`,
+          );
+        }
+        currentArgs = buildHandoffResumeArgs(agyArgs, nextHop.prompt);
+        continue;
+      }
+    }
+
+    return {
+      exitCode: res.exitCode,
+      signal: res.signal,
+      proxy: resolved,
+      hops,
+    };
+  }
 }

@@ -1,6 +1,8 @@
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { computeSwapHint } from './account-quota.mjs';
+import { readActiveAccountState } from './account-store.mjs';
 import { classifyAgentActivity, extractNativeCostUsd } from './agent-state.mjs';
 import { sanitizeText } from './ansi.mjs';
 import { loadConfig } from './config.mjs';
@@ -30,8 +32,12 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     const payload = JSON.parse(raw);
     const now = Date.now();
     maybeCaptureRedactedPayload(payload);
+    const activeAccountState = readActiveAccountState();
     const syncedQuota = payload?.quota
-      ? syncSharedQuota(payload.quota, { now, accountKey: extractAccountKey(payload) })
+      ? syncSharedQuota(payload.quota, {
+          now,
+          accountKey: extractAccountKey(payload, { fallbackAccountKey: activeAccountState?.activeQuotaKey ?? null }),
+        })
       : null;
     const effectivePayload = syncedQuota && syncedQuota !== payload.quota ? { ...payload, quota: syncedQuota } : payload;
     const prevSession = peekSessionState(effectivePayload);
@@ -81,9 +87,9 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     // `settings.json.title` hook is not already driving this session's title, OR as a
     // one-shot push the moment a brand-new conversation's initial summary title lands.
     let tabSync = null;
+    const sessionIdForTitle = deriveSessionId(effectivePayload);
+    const nativeActive = !plain && config.tabTitle ? isNativeTitleActive(sessionIdForTitle, { now, hostPid: process.ppid }) : false;
     if (!plain && config.tabTitle) {
-      const sessionIdForTitle = deriveSessionId(effectivePayload);
-      const nativeActive = isNativeTitleActive(sessionIdForTitle, { now, hostPid: process.ppid });
       const newlyDiscoveredDbTitle = Boolean(!hasPayloadTitle && !prevSession?.conversationTitle && conversationTitle && !customTitle);
       if (!nativeActive || newlyDiscoveredDbTitle) {
         tabSync = syncTabTitle(payloadForTitle, {
@@ -101,9 +107,40 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
     }
 
     const stepTiming = config.dbTiming
-      ? await readLatestStepTiming(effectivePayload, { prevDbStamp: prevSession?.dbStamp ?? null })
+      ? await readLatestStepTiming(effectivePayload, {
+          prevDbStamp: prevSession?.dbStamp ?? null,
+          prevWaitingForInput: Boolean(prevSession?.dbWaitingForInput),
+        })
       : null;
-    const telemetry = recordTelemetry(effectivePayload, {
+
+    // During ask_question prompts, AGY keeps agent_state="working" while steps.status=9 in local DB.
+    // Promote waiting_for_input on the live payload and push a one-shot tab update on transitions.
+    const dbWaitingNow = Boolean(stepTiming?.waitingForInput);
+    const dbWaitingPrev = Boolean(prevSession?.dbWaitingForInput);
+    const livePayload =
+      dbWaitingNow && effectivePayload.waiting_for_input !== true
+        ? { ...effectivePayload, waiting_for_input: true }
+        : effectivePayload;
+
+    if (!plain && config.tabTitle && dbWaitingNow !== dbWaitingPrev) {
+      const liveTitlePayload =
+        conversationTitle && !hasPayloadTitle
+          ? { ...livePayload, conversation_title: conversationTitle }
+          : livePayload;
+      tabSync = syncTabTitle(liveTitlePayload, {
+        config,
+        git,
+        customTitle,
+        prevTabTitle: tabSync?.title || prevSession?.lastTabTitle || null,
+        prevTabHostPid: tabSync?.hostPid ?? prevSession?.lastTabHostPid ?? null,
+        prevTabTty: (tabSync?.tty && tabSync.tty !== 'custom' ? tabSync.tty : null) || prevSession?.lastTabTty || null,
+        hostPidHint: process.ppid,
+        force: nativeActive,
+        resolveOpts: { env },
+      });
+    }
+
+    const telemetry = recordTelemetry(livePayload, {
       now,
       git,
       stepTiming,
@@ -114,7 +151,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       enableLedger: config.ledger,
     });
 
-    const activity = classifyAgentActivity(effectivePayload);
+    const activity = classifyAgentActivity(livePayload);
     let usageSummary = null;
     if (
       config.show.todayTokens ||
@@ -134,7 +171,7 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       });
     }
 
-    const nativeCostUsd = extractNativeCostUsd(effectivePayload);
+    const nativeCostUsd = extractNativeCostUsd(livePayload);
     const effectiveSessionCostUsd = Math.max(telemetry.sessionCostUsd || 0, usageSummary?.sessionCostUsd || 0, nativeCostUsd || 0);
     const effectiveTelemetry =
       effectiveSessionCostUsd !== telemetry.sessionCostUsd
@@ -145,13 +182,23 @@ export async function runStatusline({ stdin = process.stdin, stdout = process.st
       maybeTriggerBackgroundPricingSync({ enabled: true, now, env });
     }
 
-    const rendered = renderStatusline(effectivePayload, {
+    const swapHint =
+      config.swapHint !== false && activeAccountState?.activeAccountId
+        ? computeSwapHint({
+            payload: livePayload,
+            activeAccountId: activeAccountState.activeAccountId,
+            now,
+          })
+        : null;
+
+    const rendered = renderStatusline(livePayload, {
       config,
       now,
       color,
       git,
       telemetry: effectiveTelemetry,
       usageSummary,
+      swapHint,
       env,
       themeOptions: { env },
     });

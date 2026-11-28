@@ -146,6 +146,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   tabTitle: true,
   tabTitleSource: 'auto',
   tabTitleMaxLen: 26,
+  swapHint: true,
+  autoSwitchOnLimit: false,
+  autoHandoff: false,
   contextWarn: 70,
   contextDanger: 88,
   quotaWarn: 25,
@@ -349,6 +352,9 @@ export function normalizeConfig(raw) {
   const tabTitle = typeof input.tabTitle === 'boolean' ? input.tabTitle : DEFAULT_CONFIG.tabTitle;
   const tabTitleSource = TAB_TITLE_SOURCES.includes(input.tabTitleSource) ? input.tabTitleSource : DEFAULT_CONFIG.tabTitleSource;
   const tabTitleMaxLen = clampInt(input.tabTitleMaxLen, 10, 60, DEFAULT_CONFIG.tabTitleMaxLen);
+  const swapHint = typeof input.swapHint === 'boolean' ? input.swapHint : DEFAULT_CONFIG.swapHint;
+  const autoSwitchOnLimit = typeof input.autoSwitchOnLimit === 'boolean' ? input.autoSwitchOnLimit : DEFAULT_CONFIG.autoSwitchOnLimit;
+  const autoHandoff = typeof input.autoHandoff === 'boolean' ? input.autoHandoff : DEFAULT_CONFIG.autoHandoff;
   const contextWarn = clampInt(input.contextWarn, 10, 95, DEFAULT_CONFIG.contextWarn);
   const contextDanger = clampInt(input.contextDanger, contextWarn, 99, DEFAULT_CONFIG.contextDanger);
   const quotaDanger = clampInt(input.quotaDanger, 1, 50, DEFAULT_CONFIG.quotaDanger);
@@ -382,6 +388,9 @@ export function normalizeConfig(raw) {
     tabTitle,
     tabTitleSource,
     tabTitleMaxLen,
+    swapHint,
+    autoSwitchOnLimit,
+    autoHandoff,
     contextWarn,
     contextDanger,
     quotaWarn,
@@ -421,6 +430,9 @@ export function serializeConfig(cfg) {
   if (normalized.tabTitle !== DEFAULT_CONFIG.tabTitle) out.tabTitle = normalized.tabTitle;
   if (normalized.tabTitleSource !== DEFAULT_CONFIG.tabTitleSource) out.tabTitleSource = normalized.tabTitleSource;
   if (normalized.tabTitleMaxLen !== DEFAULT_CONFIG.tabTitleMaxLen) out.tabTitleMaxLen = normalized.tabTitleMaxLen;
+  if (normalized.swapHint !== DEFAULT_CONFIG.swapHint) out.swapHint = normalized.swapHint;
+  if (normalized.autoSwitchOnLimit !== DEFAULT_CONFIG.autoSwitchOnLimit) out.autoSwitchOnLimit = normalized.autoSwitchOnLimit;
+  if (normalized.autoHandoff !== DEFAULT_CONFIG.autoHandoff) out.autoHandoff = normalized.autoHandoff;
   if (normalized.contextWarn !== DEFAULT_CONFIG.contextWarn) out.contextWarn = normalized.contextWarn;
   if (normalized.contextDanger !== DEFAULT_CONFIG.contextDanger) out.contextDanger = normalized.contextDanger;
   if (normalized.quotaWarn !== DEFAULT_CONFIG.quotaWarn) out.quotaWarn = normalized.quotaWarn;
@@ -571,6 +583,18 @@ export function applyConfigCommand(args = [], path = configPath()) {
           throw new Error('tabTitleMaxLen must be an integer between 10 and 60.');
         }
         next.tabTitleMaxLen = n;
+      } else if (['swaphint', 'swap-hint', 'swap_hint'].includes(lower)) {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('swapHint must be on/off (or true/false).');
+        next.swapHint = parsed;
+      } else if (['autoswitchonlimit', 'auto-switch-on-limit', 'auto_switch_on_limit', 'autoswitch'].includes(lower)) {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('autoSwitchOnLimit must be on/off (or true/false).');
+        next.autoSwitchOnLimit = parsed;
+      } else if (['autohandoff', 'auto-handoff', 'auto_handoff'].includes(lower)) {
+        const parsed = parseToggle(value);
+        if (parsed === null) throw new Error('autoHandoff must be on/off (or true/false).');
+        next.autoHandoff = parsed;
       } else if (['contextwarn', 'context-warn'].includes(lower)) {
         next.contextWarn = Number(value);
       } else if (['contextdanger', 'context-danger'].includes(lower)) {

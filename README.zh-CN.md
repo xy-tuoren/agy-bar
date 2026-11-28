@@ -209,6 +209,16 @@ agy-bar proxy hook              # 启用直接敲 `agy` 自动走代理（随时
 agy-bar run -c                  # 不改 ~/.zshrc 直接通过代理启动 `agy -c`
 agy-bar proxy set 127.0.0.1:7897
 
+# 多账号免浏览器无感切换 & CLI 额度管理（纯可选，三端支持 macOS / Linux / Windows，0 私有 API）
+agy-bar account save work       # 收录当前已登录的 agy 账号至系统钥匙串（无头环境自动降级 0600 文件）
+agy-bar account add alt1        # 保存当前号 → 调官方 `agy` 完成一次 OAuth 登录并自动收录新号
+agy-bar account import          # 一键导入 Cockpit Tools（~/.cockpit_tools）现有账号或导出的 JSON 文件
+agy-bar account ls [--json]     # 查看全部账号的 Gemini / Claude 5h/7d 额度条、READY/LOW/LIMITED 状态与解锁倒计时
+agy-bar switch [alias|next]     # 免浏览器秒切账号（无参数弹出方向键选择器；`next` 自动挑选最充裕账号）
+agy-bar switch next --family claude --handoff  # 自动切至最充裕的 Claude 账号并携深度上下文（任务工件 + git + 对话进展）启动新 `agy -i`
+agy-bar config set autoSwitchOnLimit on autoHandoff on  # 可选：新开 `agy` 自动跳过限额号 + 限额敲 `/exit` 后原地自动切号续跑
+agy-bar account backup vault.enc.json          # 导出 AES-256-GCM 加密备份（恢复：`agy-bar account restore`）
+
 # 统计、定价、监视面板、标签标题与抓包调试
 agy-bar stats [today|7d|30d|all] [--palette purple|green|cyan|amber] [--source all|cli|desktop|ledger] [--json]
 agy-bar pricing show [--json] | sync | set <model> <in> <out> [cacheRead] | reset
@@ -310,7 +320,7 @@ eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
 ## 本地开发
 
 ```sh
-npm test            # 运行内置单元测试（88 项，macOS / Linux / Windows × Node 20/22/24 三端 CI）
+npm test            # 运行内置单元测试（102 项，macOS / Linux / Windows × Node 20/22/24 三端 CI）
 npm run preview     # 终端实时预览
 npm run preview:svg # 重新生成 assets/ 下全部 5 张展示 SVG
 npm run stats       # 查看本机统计

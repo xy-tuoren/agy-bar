@@ -4,6 +4,29 @@ import { delimiter, dirname, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import {
+  ACCOUNT_FAMILIES,
+  detectQuotaFamilyFromModel,
+  formatAccountTable,
+  listAccountsWithQuota,
+  maybeAutoSwitchAccount,
+  pickNextBestAccount,
+  sanitizeAccountForJson,
+} from '../src/account-quota.mjs';
+import { IMPORT_SOURCES, importExternalAccounts } from '../src/account-import.mjs';
+import {
+  exportEncryptedBackup,
+  importEncryptedBackup,
+  prepareForNewAccountLogin,
+  readActiveAccountState,
+  removeAccount,
+  renameAccount,
+  restorePreservedLogin,
+  saveCurrentAccount,
+  switchToAccount,
+  syncActiveAccountBeforeLaunch,
+  VAULT_STORAGE_MODES,
+} from '../src/account-store.mjs';
+import {
   applyConfigCommand,
   BAR_STYLE_NAMES,
   COLOR_MODES,
@@ -12,6 +35,8 @@ import {
   saveConfig,
   TAB_TITLE_SOURCES,
 } from '../src/config.mjs';
+import { writeFileAtomic } from '../src/fs-atomic.mjs';
+import { prepareHandoff } from '../src/handoff.mjs';
 import {
   computeUsageSummary,
   readConversationParentMap,
@@ -20,6 +45,7 @@ import {
   usageSummaryPath,
 } from '../src/history-scan.mjs';
 import { installAgyBar, runDoctor, uninstallAgyBar } from '../src/installer.mjs';
+import { readActiveAgyCredential } from '../src/keyring.mjs';
 import { startMonitor } from '../src/monitor.mjs';
 import { buildPreviewOutput } from '../src/preview.mjs';
 import {
@@ -46,6 +72,7 @@ import {
   formatShellExports,
   launchAgyWithProxy,
   normalizeBypassList,
+  parseRunArgs,
   PROXY_MODES,
   readEnvProxy,
   redactProxyUrl,
@@ -100,6 +127,9 @@ export const HELP_TEXT = [
   '  run [opts] [agy args..] Launch agy through your local proxy without TUN mode',
   '    --proxy <url>         Override proxy URL for this session (e.g. 127.0.0.1:7897)',
   '    --no-proxy            Launch agy directly without proxy environment variables',
+  '    --auto-switch         Auto-switch to next READY account before launch if active account is LIMITED',
+  '    --auto-handoff        Exit-and-resume guard: if active account hits 0%, /exit auto-switches & resumes agy -i',
+  `    --family <f>          Preferred quota family for auto-switch/handoff (${ACCOUNT_FAMILIES.join(' | ')})`,
   '    --agy-bin <path>      Explicit path to the agy executable',
   '    -q, --quiet           Suppress the one-line launch banner on stderr',
   '    --                    Stop agy-bar option parsing; forward all remaining args to agy',
@@ -116,6 +146,25 @@ export const HELP_TEXT = [
   '    env [--sh|--fish|--pwsh] Print shell export commands (e.g. eval "$(agy-bar proxy env)")',
   '    clear                 Reset proxy settings back to default auto-detect mode',
   '',
+  '  account [subcommand]    Browser-free multi-account vault & passive CLI quota dashboard (alias: accounts)',
+  '    ls | status [--json]  List saved accounts, 5h/7d quotas, READY/LOW/LIMITED & reset timers (default)',
+  '    save [alias]          Snapshot current logged-in agy account into vault (macOS/Linux/Windows)',
+  '    add [alias]           Preserve current account, launch official agy for one-time OAuth, and capture it',
+  '    import [path]         Import accounts from Cockpit Tools (~/.cockpit_tools) or an exported JSON file',
+  '    use <alias>           Switch active agy credential to <alias> without opening a browser',
+  `    next [--family <f>]   Auto-switch to best READY account (${ACCOUNT_FAMILIES.join(' | ')})`,
+  '    rename <old> <new>    Rename a saved account alias',
+  '    rm <alias>            Remove a saved account from vault',
+  '    backup <file>         Export AES-256-GCM encrypted vault backup (passphrase prompt or AGY_BAR_BACKUP_PASSPHRASE)',
+  '    restore <file>        Import accounts from an encrypted vault backup',
+  '',
+  '  switch [alias|next]     Quick-switch account (arrow-key picker if omitted)',
+  `    --family <f>          Preferred quota family for "next" (${ACCOUNT_FAMILIES.join(' | ')})`,
+  '    --handoff             Generate compact workspace/transcript handoff and launch fresh agy -i',
+  '    --print               With --handoff, print the handoff prompt instead of launching agy',
+  '',
+  '  handoff [--print]       Generate workspace + recent transcript handoff and launch fresh agy -i',
+  '',
   '  uninstall [options]     Remove agy-bar, shell hook & restore previous statusLine setting',
   '    --remove-skill        Also remove the managed /agy-bar skill',
   '    --purge               Also remove ~/.gemini/config/agy-bar/config.json & telemetry',
@@ -128,7 +177,7 @@ export const HELP_TEXT = [
   `    bar-style <style>     Switch bar style (${BAR_STYLE_NAMES.join(' | ')})`,
   '    enable <items...>     Enable items (ttft, speed, dir, vim, cost, session, contextDelta, ...)',
   '    disable <items...>    Disable items',
-  `    set <key> <value>...  Set colorMode (${COLOR_MODES.join('|')}), dirStyle (short|parent|name), barWidth, ttftWarnSec, dbTiming, pricingAutoSync, ledger`,
+  `    set <key> <value>...  Set colorMode (${COLOR_MODES.join('|')}), dirStyle (short|parent|name), barWidth, swapHint, autoSwitchOnLimit, autoHandoff, dbTiming, pricingAutoSync`,
   '    reset                 Restore default settings',
   '',
   '  stats [period] [opts]   Full-history token dashboard, terminal heatmap & API cost estimate',
@@ -202,10 +251,33 @@ function parseFlags(args) {
     else if (arg === '--cache') flags.cache = true;
     else if (arg === '--force') flags.force = true;
     else if (arg === '--quiet' || arg === '-q') flags.quiet = true;
+    else if (arg === '--handoff') flags.handoff = true;
+    else if (arg === '--print') flags.print = true;
+    else if (arg === '--dry-run') flags.dryRun = true;
+    else if (arg === '--include-disabled') flags.includeDisabled = true;
     else if (arg === '--sh') flags.shell = 'sh';
     else if (arg === '--fish') flags.shell = 'fish';
     else if (arg === '--pwsh') flags.shell = 'pwsh';
-    else if (['--preset', '--theme', '--bar-style', '--color-mode', '--scenario', '--width', '--model', '--interval', '--session', '--source', '--palette', '--shell'].includes(arg)) {
+    else if (
+      [
+        '--preset',
+        '--theme',
+        '--bar-style',
+        '--color-mode',
+        '--scenario',
+        '--width',
+        '--model',
+        '--interval',
+        '--session',
+        '--source',
+        '--palette',
+        '--shell',
+        '--family',
+        '--storage',
+        '--passphrase',
+        '--from',
+      ].includes(arg)
+    ) {
       const value = args[++i];
       if (!value) throw new Error(`Missing value for ${arg}`);
       const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -238,14 +310,28 @@ export async function main(argv = process.argv.slice(2)) {
   }
 
   if (command === 'run') {
-    const cfg = loadConfig();
-    const res = await launchAgyWithProxy(rest, { proxyConfig: cfg.proxy });
+    const res = await runManagedAgy(rest);
     if (res.exitCode) process.exitCode = res.exitCode;
     return;
   }
 
   if (command === 'proxy') {
     await handleProxyCommand(rest);
+    return;
+  }
+
+  if (command === 'account' || command === 'accounts') {
+    await handleAccountCommand(rest);
+    return;
+  }
+
+  if (command === 'switch') {
+    await handleSwitchCommand(rest);
+    return;
+  }
+
+  if (command === 'handoff') {
+    await handleHandoffCommand(rest);
     return;
   }
 
@@ -468,6 +554,7 @@ export async function main(argv = process.argv.slice(2)) {
           subagents: target.runningSubagents || 0,
           task_count: target.runningTasks || 0,
           tool_confirmation_pending: Boolean(target.toolConfirmationPending),
+          waiting_for_input: Boolean(target.dbWaitingForInput),
           conversation_title: resolvedConvTitle,
           cwd: target.cwd,
         },
@@ -607,8 +694,7 @@ async function handleProxyCommand(args) {
   const [sub = 'status', ...rest] = args;
 
   if (sub === 'run') {
-    const cfg = loadConfig();
-    const res = await launchAgyWithProxy(rest, { proxyConfig: cfg.proxy });
+    const res = await runManagedAgy(rest);
     if (res.exitCode) process.exitCode = res.exitCode;
     return;
   }
@@ -1011,6 +1097,517 @@ async function handlePricingCommand(args) {
   }
 
   throw new Error(`Unknown pricing subcommand "${sub}". Run "agy-bar pricing --help" for usage.`);
+}
+
+async function promptHiddenPassphrase(promptText) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error('Passphrase required. Set AGY_BAR_BACKUP_PASSPHRASE or pass --passphrase <pw> in non-interactive mode.');
+  }
+  return new Promise((resolvePromise, rejectPromise) => {
+    process.stdout.write(promptText);
+    const stdin = process.stdin;
+    const wasRaw = Boolean(stdin.isRaw);
+    let value = '';
+    stdin.setRawMode(true);
+    stdin.resume();
+
+    const cleanup = () => {
+      stdin.off('data', onData);
+      try {
+        stdin.setRawMode(wasRaw);
+      } catch {
+        // Ignore raw mode restore errors.
+      }
+      stdin.pause();
+    };
+
+    const onData = (buf) => {
+      const str = buf.toString('utf8');
+      for (const ch of str) {
+        if (ch === '\r' || ch === '\n') {
+          cleanup();
+          process.stdout.write('\n');
+          resolvePromise(value);
+          return;
+        }
+        if (ch === '\x03') {
+          cleanup();
+          process.stdout.write('\n');
+          rejectPromise(new Error('Cancelled.'));
+          return;
+        }
+        if (ch === '\x7f' || ch === '\b') {
+          value = value.slice(0, -1);
+          continue;
+        }
+        if (ch >= ' ') {
+          value += ch;
+        }
+      }
+    };
+
+    stdin.on('data', onData);
+  });
+}
+
+async function promptAccountPicker(rows) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    const names = rows.map((r) => r.alias).join(', ');
+    throw new Error(`Specify an account alias or "next" in non-interactive mode. Saved accounts: ${names}`);
+  }
+  return new Promise((resolvePromise, rejectPromise) => {
+    let selected = Math.max(
+      0,
+      rows.findIndex((r) => r.isActive),
+    );
+    const stdin = process.stdin;
+    const wasRaw = Boolean(stdin.isRaw);
+    let renderedLines = 0;
+
+    const formatRow = (row, idx) => {
+      const cursor = idx === selected ? '›' : ' ';
+      const active = row.isActive ? '●' : ' ';
+      const g5 = row.gemini.fiveHourPct !== null ? `G:${row.gemini.fiveHourPct}%` : 'G:--';
+      const c5 = row.claude.fiveHourPct !== null ? `C:${row.claude.fiveHourPct}%` : 'C:--';
+      const email = row.maskedEmail ? ` (${row.maskedEmail})` : '';
+      return ` ${cursor} ${active} ${row.alias.padEnd(14)} ${row.overallStatus.padEnd(7)}  ${g5.padEnd(6)} ${c5.padEnd(6)}${email}`;
+    };
+
+    const render = () => {
+      if (renderedLines > 0) {
+        process.stdout.write(`\x1b[${renderedLines}A\x1b[J`);
+      }
+      const lines = [
+        'Select Antigravity account (↑/↓ move, Enter switch, Esc cancel):',
+        ...rows.map((r, i) => formatRow(r, i)),
+      ];
+      process.stdout.write(`${lines.join('\n')}\n`);
+      renderedLines = lines.length;
+    };
+
+    const cleanup = () => {
+      stdin.off('data', onData);
+      try {
+        stdin.setRawMode(wasRaw);
+      } catch {
+        // Ignore raw mode restore errors.
+      }
+      stdin.pause();
+    };
+
+    const onData = (buf) => {
+      const key = buf.toString('utf8');
+      if (key === '\x03' || key === 'q' || key === '\x1b') {
+        cleanup();
+        rejectPromise(new Error('Switch cancelled.'));
+        return;
+      }
+      if (key === '\r' || key === '\n') {
+        cleanup();
+        resolvePromise(rows[selected]);
+        return;
+      }
+      if (key === '\x1b[A' || key === 'k') {
+        selected = (selected - 1 + rows.length) % rows.length;
+        render();
+        return;
+      }
+      if (key === '\x1b[B' || key === 'j') {
+        selected = (selected + 1) % rows.length;
+        render();
+      }
+    };
+
+    stdin.setRawMode(true);
+    stdin.resume();
+    render();
+    stdin.on('data', onData);
+  });
+}
+
+function detectRecentSessionFamily(cwd, startedAt) {
+  try {
+    const normCwd = resolve(cwd);
+    const sessions = listSessions();
+    const match = sessions.find(
+      (s) => s?.cwd && resolve(s.cwd) === normCwd && Number(s.updatedAt || 0) >= startedAt - 15_000,
+    );
+    if (match?.model) {
+      return detectQuotaFamilyFromModel(match.model);
+    }
+  } catch {
+    // Fall back to auto family.
+  }
+  return 'auto';
+}
+
+async function runManagedAgy(rawArgs) {
+  const cfg = loadConfig();
+  const { options } = parseRunArgs(rawArgs);
+  const autoSwitchEnabled = options.autoSwitch ?? cfg.autoSwitchOnLimit;
+  const autoHandoffEnabled = options.autoHandoff ?? cfg.autoHandoff;
+  const visitedAccountIds = new Set();
+
+  const autoSwitchAccount = autoSwitchEnabled
+    ? ({ family = 'auto' } = {}) => maybeAutoSwitchAccount({ family })
+    : null;
+
+  const autoHandoffHook = autoHandoffEnabled
+    ? ({ startedAt, family }) => {
+        const effectiveFamily = family || detectRecentSessionFamily(process.cwd(), startedAt);
+        const sw = maybeAutoSwitchAccount({
+          family: effectiveFamily,
+          excludeIds: [...visitedAccountIds],
+        });
+        if (!sw?.switched) return null;
+        if (sw.fromId) visitedAccountIds.add(sw.fromId);
+        if (sw.toId) visitedAccountIds.add(sw.toId);
+        const handoff = prepareHandoff({
+          cwd: process.cwd(),
+          fromAlias: sw.fromAlias,
+          targetAlias: sw.toAlias,
+        });
+        return {
+          resume: true,
+          prompt: handoff.prompt,
+          fromAlias: sw.fromAlias,
+          toAlias: sw.toAlias,
+          family: effectiveFamily,
+        };
+      }
+    : null;
+
+  return launchAgyWithProxy(rawArgs, {
+    proxyConfig: cfg.proxy,
+    syncAccount: syncActiveAccountBeforeLaunch,
+    autoSwitchAccount,
+    autoHandoffHook,
+  });
+}
+
+async function runPostSwitchHandoff({ fromAlias, targetAlias, printOnly = false }) {
+  const handoff = prepareHandoff({ cwd: process.cwd(), fromAlias, targetAlias });
+  if (printOnly) {
+    console.log(handoff.prompt);
+    return;
+  }
+  const cfg = loadConfig();
+  const summaryBits = [
+    handoff.artifactCount ? `${handoff.artifactCount} artifact(s)` : null,
+    handoff.hasTranscript ? 'transcript' : null,
+    handoff.hasGit ? 'git' : null,
+  ]
+    .filter(Boolean)
+    .join(' + ');
+  process.stderr.write(
+    `agy-bar: launching fresh agy session on "${targetAlias}" with workspace handoff (${summaryBits || 'workspace'})...\n`,
+  );
+  const res = await launchAgyWithProxy(['-i', handoff.prompt], {
+    proxyConfig: cfg.proxy,
+    syncAccount: syncActiveAccountBeforeLaunch,
+  });
+  if (res.exitCode) process.exitCode = res.exitCode;
+}
+
+async function handleSwitchCommand(args) {
+  const { flags, positional } = parseFlags(args);
+  const targetArg = positional[0] || null;
+  const rows = listAccountsWithQuota();
+  if (rows.length === 0) {
+    throw new Error('No saved accounts yet. Run "agy-bar account save <alias>" first.');
+  }
+
+  let targetAlias = targetArg;
+  let pickedInfo = null;
+  if (!targetAlias) {
+    const chosen = await promptAccountPicker(rows);
+    targetAlias = chosen.alias;
+  } else if (targetAlias.toLowerCase() === 'next') {
+    const state = readActiveAccountState();
+    pickedInfo = pickNextBestAccount(rows, {
+      currentId: state?.activeAccountId || null,
+      family: flags.family || 'auto',
+    });
+    targetAlias = pickedInfo.account.alias;
+  }
+
+  const res = switchToAccount(targetAlias);
+  const writebackNote = res.wroteBackOutgoing && res.fromAlias ? ` (saved refreshed token for "${res.fromAlias}")` : '';
+  const limitedNote = pickedInfo?.allLimited
+    ? ' [all accounts currently LIMITED — picked earliest reset]'
+    : '';
+  console.log(
+    `Switched active account -> ${res.account.alias}${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''}${writebackNote}${limitedNote}`,
+  );
+  if (flags.handoff) {
+    await runPostSwitchHandoff({
+      fromAlias: res.fromAlias,
+      targetAlias: res.account.alias,
+      printOnly: Boolean(flags.print),
+    });
+  } else {
+    console.log('Open a new "agy" session to use this account (or pass --handoff to continue your current task seamlessly).');
+  }
+}
+
+async function handleHandoffCommand(args) {
+  const { flags } = parseFlags(args);
+  const state = readActiveAccountState();
+  const rows = listAccountsWithQuota();
+  const activeRow = state?.activeAccountId ? rows.find((r) => r.id === state.activeAccountId) : null;
+  const handoff = prepareHandoff({
+    cwd: process.cwd(),
+    targetAlias: activeRow?.alias || null,
+  });
+
+  if (flags.print) {
+    console.log(handoff.prompt);
+    return;
+  }
+
+  const cfg = loadConfig();
+  process.stderr.write(
+    `agy-bar: launching fresh agy session with handoff (${handoff.hasTranscript ? 'transcript + ' : ''}${handoff.hasGit ? 'git' : 'workspace'})...\n`,
+  );
+  const res = await launchAgyWithProxy(['-i', handoff.prompt], {
+    proxyConfig: cfg.proxy,
+    syncAccount: syncActiveAccountBeforeLaunch,
+  });
+  if (res.exitCode) process.exitCode = res.exitCode;
+}
+
+async function handleAccountCommand(args) {
+  const [sub = 'ls', ...rest] = args;
+
+  if (sub === 'help' || sub === '--help' || sub === '-h') {
+    console.log(
+      [
+        'Usage: agy-bar account <subcommand> [options]',
+        '',
+        '  ls | status [--json] [--plain]                  List saved accounts, 5h/7d quotas & READY/LIMITED timers',
+        `  save [alias] [--force] [--storage ${VAULT_STORAGE_MODES.join('|')}]  Save current logged-in agy session into vault`,
+        `  add [alias] [--force] [--storage ${VAULT_STORAGE_MODES.join('|')}]   Save current account, launch agy for one-time OAuth, capture new slot`,
+        `  import [path] [--from ${IMPORT_SOURCES.join('|')}] [--dry-run] [--include-disabled] [--force]  Import from Cockpit Tools or JSON`,
+        '  use <alias> [--handoff] [--print]               Switch active agy account without opening a browser',
+        `  next [--family ${ACCOUNT_FAMILIES.join('|')}] [--handoff]     Auto-switch to best READY account`,
+        '  rename <old> <new>                              Rename an account alias',
+        '  rm <alias>                                      Remove an account from the local vault',
+        '  backup <file> [--passphrase <pw>]               Export AES-256-GCM encrypted vault backup',
+        '  restore <file> [--passphrase <pw>] [--force]    Restore accounts from an encrypted backup',
+      ].join('\n'),
+    );
+    return;
+  }
+
+  if (sub === 'ls' || sub === 'list' || sub === 'status') {
+    const { flags } = parseFlags(rest);
+    const rows = listAccountsWithQuota();
+    if (flags.json) {
+      console.log(
+        JSON.stringify(
+          {
+            count: rows.length,
+            activeAlias: rows.find((r) => r.isActive)?.alias || null,
+            accounts: rows.map(sanitizeAccountForJson),
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    const cfg = loadConfig();
+    const color = !flags.plain && !('NO_COLOR' in process.env) && cfg.theme !== 'mono';
+    console.log(formatAccountTable(rows, { color, theme: cfg.theme }));
+    return;
+  }
+
+  if (sub === 'save') {
+    const { flags, positional } = parseFlags(rest);
+    const res = saveCurrentAccount({
+      alias: positional[0] || null,
+      force: Boolean(flags.force),
+      storage: flags.storage || 'auto',
+    });
+    console.log(
+      `${res.action === 'updated' ? 'Updated' : 'Saved'} account "${res.account.alias}"${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''} [${res.account.storageBackend}, read from ${res.source}].`,
+    );
+    return;
+  }
+
+  if (sub === 'add') {
+    const { flags, positional } = parseFlags(rest);
+    const alias = positional[0] || null;
+    const { preserved } = prepareForNewAccountLogin();
+    if (preserved?.alias) {
+      console.log(`Preserved current account "${preserved.alias}" in vault and cleared active session.`);
+    } else {
+      console.log('Cleared active Antigravity session.');
+    }
+    console.log('Launching official "agy" for one-time browser sign-in...');
+    console.log('Complete login in your browser, then press Ctrl+C or run "/exit" in agy to finish saving.');
+
+    const cfg = loadConfig();
+    await launchAgyWithProxy([], { proxyConfig: cfg.proxy, syncAccount: null });
+
+    const freshCred = readActiveAgyCredential();
+    if (!freshCred?.raw) {
+      if (preserved?.raw) {
+        restorePreservedLogin(preserved);
+        console.log(`No new login detected — restored previous account${preserved.alias ? ` "${preserved.alias}"` : ''}.`);
+      } else {
+        console.log('No new login detected.');
+      }
+      return;
+    }
+
+    const res = saveCurrentAccount({
+      alias,
+      force: Boolean(flags.force),
+      storage: flags.storage || 'auto',
+    });
+    console.log(
+      `Captured & activated account "${res.account.alias}"${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''} [${res.account.storageBackend}].`,
+    );
+    return;
+  }
+
+  if (sub === 'import') {
+    const { flags, positional } = parseFlags(rest);
+    const res = importExternalAccounts({
+      targetPath: positional[0] || null,
+      from: flags.from || 'auto',
+      force: Boolean(flags.force),
+      includeDisabled: Boolean(flags.includeDisabled),
+      dryRun: Boolean(flags.dryRun),
+      storage: flags.storage || 'auto',
+    });
+
+    if (flags.json) {
+      console.log(JSON.stringify(res, null, 2));
+      return;
+    }
+
+    if (res.dryRun) {
+      console.log(`Dry run (${res.source}: ${res.sourcePath}): found ${res.candidates.length} importable account(s).`);
+      for (const c of res.candidates) {
+        console.log(
+          `  + ${c.alias}${c.maskedEmail ? ` (${c.maskedEmail})` : ''}${c.tier ? ` [${c.tier}]` : ''}${c.hasQuotaSeed ? ' · quota snapshot' : ''}`,
+        );
+      }
+      if (res.skipped.length > 0) {
+        console.log(`Skipped ${res.skipped.length}:`);
+        for (const s of res.skipped) {
+          console.log(`  - ${s.alias || s.file || 'entry'}${s.maskedEmail ? ` (${s.maskedEmail})` : ''}: ${s.reason}`);
+        }
+      }
+      return;
+    }
+
+    console.log(
+      `Imported from ${res.source} (${res.sourcePath}): ${res.imported.length} added, ${res.updated.length} updated${res.skipped.length ? `, ${res.skipped.length} skipped` : ''}${res.seededQuotas ? `, ${res.seededQuotas} quota snapshot(s) seeded` : ''}.`,
+    );
+    for (const item of res.imported) {
+      console.log(
+        `  + ${item.alias}${item.maskedEmail ? ` (${item.maskedEmail})` : ''}${item.tier ? ` [${item.tier}]` : ''} [${item.storageBackend}]`,
+      );
+    }
+    for (const item of res.updated) {
+      console.log(
+        `  ~ ${item.alias}${item.maskedEmail ? ` (${item.maskedEmail})` : ''}${item.tier ? ` [${item.tier}]` : ''} [updated]`,
+      );
+    }
+    for (const s of res.skipped) {
+      console.log(`  - skipped ${s.alias || s.file || 'entry'}${s.maskedEmail ? ` (${s.maskedEmail})` : ''}: ${s.reason}`);
+    }
+    console.log('Run "agy-bar account ls" to inspect quotas, or "agy-bar switch" to switch without a browser.');
+    return;
+  }
+
+  if (sub === 'use') {
+    const { flags, positional } = parseFlags(rest);
+    if (!positional[0]) {
+      throw new Error('Usage: agy-bar account use <alias> [--handoff]');
+    }
+    await handleSwitchCommand([positional[0], ...(flags.handoff ? ['--handoff'] : []), ...(flags.print ? ['--print'] : [])]);
+    return;
+  }
+
+  if (sub === 'next') {
+    const { flags } = parseFlags(rest);
+    await handleSwitchCommand([
+      'next',
+      ...(flags.family ? ['--family', flags.family] : []),
+      ...(flags.handoff ? ['--handoff'] : []),
+      ...(flags.print ? ['--print'] : []),
+    ]);
+    return;
+  }
+
+  if (sub === 'rename' || sub === 'alias') {
+    const { positional } = parseFlags(rest);
+    if (positional.length < 2) {
+      throw new Error('Usage: agy-bar account rename <old-alias> <new-alias>');
+    }
+    const res = renameAccount(positional[0], positional[1]);
+    console.log(`Renamed account "${res.oldAlias}" -> "${res.newAlias}".`);
+    return;
+  }
+
+  if (sub === 'rm' || sub === 'remove' || sub === 'delete') {
+    const { positional } = parseFlags(rest);
+    if (!positional[0]) {
+      throw new Error('Usage: agy-bar account rm <alias>');
+    }
+    const res = removeAccount(positional[0]);
+    console.log(`Removed account "${res.account.alias}" from vault (${res.remaining} remaining).`);
+    return;
+  }
+
+  if (sub === 'backup') {
+    const { flags, positional } = parseFlags(rest);
+    const outPath = positional[0];
+    if (!outPath) {
+      throw new Error('Usage: agy-bar account backup <output-file.json> [--passphrase <pw>]');
+    }
+    let passphrase = flags.passphrase || process.env.AGY_BAR_BACKUP_PASSPHRASE || '';
+    if (!passphrase) {
+      passphrase = await promptHiddenPassphrase('Enter encryption passphrase (min 4 chars): ');
+      const confirm = await promptHiddenPassphrase('Confirm passphrase: ');
+      if (passphrase !== confirm) {
+        throw new Error('Passphrases do not match.');
+      }
+    }
+    const envelope = exportEncryptedBackup({ passphrase });
+    const absPath = resolve(outPath);
+    writeFileAtomic(absPath, JSON.stringify(envelope, null, 2) + '\n', { mode: 0o600 });
+    console.log(`Exported ${envelope.count} encrypted account(s) -> ${absPath} (AES-256-GCM)`);
+    return;
+  }
+
+  if (sub === 'restore') {
+    const { flags, positional } = parseFlags(rest);
+    const inPath = positional[0];
+    if (!inPath) {
+      throw new Error('Usage: agy-bar account restore <backup-file.json> [--passphrase <pw>] [--force]');
+    }
+    let passphrase = flags.passphrase || process.env.AGY_BAR_BACKUP_PASSPHRASE || '';
+    if (!passphrase) {
+      passphrase = await promptHiddenPassphrase('Enter backup passphrase: ');
+    }
+    const envelope = JSON.parse(readFileSync(resolve(inPath), 'utf8'));
+    const res = importEncryptedBackup(envelope, {
+      passphrase,
+      force: Boolean(flags.force),
+      storage: flags.storage || 'auto',
+    });
+    console.log(
+      `Restored vault: ${res.imported.length} imported, ${res.updated.length} updated (${res.total} total accounts).`,
+    );
+    return;
+  }
+
+  throw new Error(`Unknown account subcommand "${sub}". Run "agy-bar account --help" for usage.`);
 }
 
 function isDirectInvocation() {

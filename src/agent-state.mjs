@@ -74,7 +74,8 @@ export function classifyAgentActivity(payload = {}) {
     });
   }
 
-  if (rawState === 'reviewing') {
+  const waitingForInput = payload?.waiting_for_input === true;
+  if (rawState === 'reviewing' || (waitingForInput && MAIN_BUSY_STATES.has(rawState))) {
     return Object.freeze({
       kind: 'input',
       rawState,

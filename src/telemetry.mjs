@@ -426,6 +426,10 @@ export function recordTelemetry(
     gitRemoved: typeof git?.removed === 'number' ? git.removed : prev?.gitRemoved ?? null,
     gitCheckedAt: git?.dirtyChecked ? now : prev?.gitCheckedAt ?? null,
     dbStamp: stepTiming?.dbStamp ?? prev?.dbStamp ?? null,
+    dbWaitingForInput:
+      typeof stepTiming?.waitingForInput === 'boolean'
+        ? stepTiming.waitingForInput
+        : Boolean(prev?.dbWaitingForInput),
     summaryDbStamp: summaryTitle?.dbStamp ?? prev?.summaryDbStamp ?? null,
     summaryTitleCheckedAt: summaryTitle?.checkedAt ?? prev?.summaryTitleCheckedAt ?? null,
     agentState: sanitizeText(p.agent_state || '') || 'idle',

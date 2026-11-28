@@ -9,6 +9,7 @@ import { writeFileAtomic } from './fs-atomic.mjs';
 export const EPOCH_SENTINEL_MS = 86_400_000;
 export const RESET_TOLERANCE_MS = 5_000;
 export const MAX_CACHE_AGE_MS = 6 * 60 * 60 * 1000;
+export const MAX_ACCOUNT_QUOTA_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 const FRACTION_EPSILON = 1e-6;
 
 const WEEKLY_SIBLING_BUCKET = Object.freeze({
@@ -61,7 +62,13 @@ export function isWeeklyBucketBlocking(bucketId, quotaMap, now = Date.now()) {
   return !isBucketResetDue(weekly, now);
 }
 
-export function extractAccountKey(payload) {
+export function hashAccountIdentifier(raw) {
+  const cleaned = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (!cleaned) return null;
+  return createHash('sha1').update(cleaned).digest('hex').slice(0, 12);
+}
+
+export function extractAccountKey(payload, { fallbackAccountKey = null } = {}) {
   const raw =
     payload?.email ||
     payload?.account?.email ||
@@ -70,9 +77,12 @@ export function extractAccountKey(payload) {
     payload?.account_id ||
     payload?.user_id ||
     '';
-  const cleaned = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
-  if (!cleaned) return 'default';
-  return createHash('sha1').update(cleaned).digest('hex').slice(0, 12);
+  const hashed = hashAccountIdentifier(raw);
+  if (hashed) return hashed;
+  if (typeof fallbackAccountKey === 'string' && fallbackAccountKey.trim()) {
+    return fallbackAccountKey.trim();
+  }
+  return 'default';
 }
 
 export function normalizeQuotaBucket(raw, observedAt = Date.now()) {
@@ -196,31 +206,87 @@ function materializeBucket(baseRaw, winner, now) {
   return out;
 }
 
-export function readSharedQuota({ baseDir = configDir(homedir()), now = Date.now(), accountKey = 'default' } = {}) {
-  const filePath = quotaCachePath(baseDir);
+function readRawQuotaCache(filePath) {
   if (!existsSync(filePath)) return null;
   try {
     const parsed = JSON.parse(readFileSync(filePath, 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || !parsed.buckets || typeof parsed.buckets !== 'object') return null;
-    const cachedAccount = typeof parsed.accountKey === 'string' ? parsed.accountKey : 'default';
-    if (accountKey !== 'default' && cachedAccount !== 'default' && cachedAccount !== accountKey) {
-      return null;
-    }
-    const buckets = {};
-    for (const [id, raw] of Object.entries(parsed.buckets)) {
-      const norm = normalizeQuotaBucket(raw, nonNeg(parsed.updatedAt) ?? now);
-      if (norm && now - norm.observedAt <= MAX_CACHE_AGE_MS) {
-        buckets[id] = norm;
-      }
-    }
-    return {
-      accountKey: cachedAccount,
-      updatedAt: nonNeg(parsed.updatedAt) ?? now,
-      buckets,
-    };
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
     return null;
   }
+}
+
+function normalizeAccountBucketMap(rawBuckets, fallbackObservedAt, now, maxAgeMs) {
+  const buckets = {};
+  if (!rawBuckets || typeof rawBuckets !== 'object') return buckets;
+  for (const [id, raw] of Object.entries(rawBuckets)) {
+    const norm = normalizeQuotaBucket(raw, fallbackObservedAt);
+    if (norm && now - norm.observedAt <= maxAgeMs) {
+      buckets[id] = norm;
+    }
+  }
+  return buckets;
+}
+
+export function readAllAccountQuotas({ baseDir = configDir(homedir()), now = Date.now(), maxAgeMs = MAX_ACCOUNT_QUOTA_RETENTION_MS } = {}) {
+  const parsed = readRawQuotaCache(quotaCachePath(baseDir));
+  if (!parsed) return {};
+
+  const out = {};
+  if (parsed.accounts && typeof parsed.accounts === 'object') {
+    for (const [key, entry] of Object.entries(parsed.accounts)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const updatedAt = nonNeg(entry.updatedAt) ?? nonNeg(parsed.updatedAt) ?? now;
+      const buckets = normalizeAccountBucketMap(entry.buckets, updatedAt, now, maxAgeMs);
+      if (Object.keys(buckets).length > 0) {
+        out[key] = { accountKey: key, updatedAt, buckets };
+      }
+    }
+  }
+
+  // Backward compatibility: include legacy top-level buckets if absent from accounts map.
+  if (parsed.buckets && typeof parsed.buckets === 'object') {
+    const topKey = typeof parsed.accountKey === 'string' && parsed.accountKey.trim() ? parsed.accountKey.trim() : 'default';
+    if (!out[topKey]) {
+      const updatedAt = nonNeg(parsed.updatedAt) ?? now;
+      const buckets = normalizeAccountBucketMap(parsed.buckets, updatedAt, now, maxAgeMs);
+      if (Object.keys(buckets).length > 0) {
+        out[topKey] = { accountKey: topKey, updatedAt, buckets };
+      }
+    }
+  }
+
+  return out;
+}
+
+export function readSharedQuota({ baseDir = configDir(homedir()), now = Date.now(), accountKey = 'default' } = {}) {
+  const parsed = readRawQuotaCache(quotaCachePath(baseDir));
+  if (!parsed) return null;
+
+  // Prefer explicit per-account cache entry when present (multi-account safe).
+  const accountEntry = parsed.accounts && typeof parsed.accounts === 'object' ? parsed.accounts[accountKey] : null;
+  if (accountEntry && typeof accountEntry === 'object' && accountEntry.buckets && typeof accountEntry.buckets === 'object') {
+    const updatedAt = nonNeg(accountEntry.updatedAt) ?? nonNeg(parsed.updatedAt) ?? now;
+    const buckets = normalizeAccountBucketMap(accountEntry.buckets, updatedAt, now, MAX_CACHE_AGE_MS);
+    return {
+      accountKey,
+      updatedAt,
+      buckets,
+    };
+  }
+
+  if (!parsed.buckets || typeof parsed.buckets !== 'object') return null;
+  const cachedAccount = typeof parsed.accountKey === 'string' ? parsed.accountKey : 'default';
+  if (accountKey !== 'default' && cachedAccount !== 'default' && cachedAccount !== accountKey) {
+    return null;
+  }
+  const updatedAt = nonNeg(parsed.updatedAt) ?? now;
+  const buckets = normalizeAccountBucketMap(parsed.buckets, updatedAt, now, MAX_CACHE_AGE_MS);
+  return {
+    accountKey: cachedAccount,
+    updatedAt,
+    buckets,
+  };
 }
 
 export function mergeQuotaSnapshots(snapshots = [], now = Date.now()) {
@@ -275,11 +341,25 @@ export function syncSharedQuota(
 
   if (cacheDirty && Object.keys(nextCacheBuckets).length > 0) {
     try {
-      const payload = {
-        version: 1,
-        accountKey: accountKey !== 'default' ? accountKey : existingCache?.accountKey || 'default',
+      const resolvedKey = accountKey !== 'default' ? accountKey : existingCache?.accountKey || 'default';
+      const existingAccounts = readAllAccountQuotas({ baseDir, now });
+      const accounts = {};
+      for (const [k, entry] of Object.entries(existingAccounts)) {
+        accounts[k] = {
+          updatedAt: entry.updatedAt,
+          buckets: entry.buckets,
+        };
+      }
+      accounts[resolvedKey] = {
         updatedAt: now,
         buckets: nextCacheBuckets,
+      };
+      const payload = {
+        version: 2,
+        accountKey: resolvedKey,
+        updatedAt: now,
+        buckets: nextCacheBuckets,
+        accounts,
       };
       writeFileAtomic(quotaCachePath(baseDir), JSON.stringify(payload) + '\n');
     } catch {

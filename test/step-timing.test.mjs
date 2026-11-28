@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { writeFileAtomic } from '../src/fs-atomic.mjs';
-import { getDbVersionStamp, parseStepTimingMetadata, readLatestStepTiming } from '../src/step-timing.mjs';
+import {
+  getDbVersionStamp,
+  parseStepTimingMetadata,
+  readConversationWaitingForInput,
+  readLatestStepTiming,
+  STEP_STATUS_WAITING,
+} from '../src/step-timing.mjs';
+import { classifyAgentActivity } from '../src/agent-state.mjs';
+import { renderNativeTitle } from '../src/title.mjs';
 
 function encodeVarint(n) {
   let v = BigInt(n);
@@ -79,6 +87,63 @@ test('getDbVersionStamp short-circuits readLatestStepTiming when unchanged and w
     writeFileSync(`${dbFile}-wal`, 'wal-change');
     const stamp2 = getDbVersionStamp(dbFile);
     assert.notEqual(stamp2, stamp1);
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('detects ask_question waiting state (steps.status=9) across step-timing, agent-state, and native title', async (t) => {
+  // Pure classifier check works on all Node versions (including Node 20 without node:sqlite).
+  const inputAct = classifyAgentActivity({ agent_state: 'working', waiting_for_input: true });
+  assert.equal(inputAct.kind, 'input');
+  assert.equal(inputAct.tabPrefix, '? ');
+  assert.equal(inputAct.statusBadge, 'INPUT');
+  assert.equal(inputAct.monitorLabel, 'input');
+  assert.equal(inputAct.needsAttention, true);
+  // Idle state never gets stuck on INPUT even if waiting_for_input flag were stale.
+  assert.equal(classifyAgentActivity({ agent_state: 'idle', waiting_for_input: true }).kind, 'idle');
+
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import('node:sqlite'));
+  } catch {
+    t.skip('node:sqlite requires Node >= 22.13');
+    return;
+  }
+
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agy-bar-waiting-'));
+  try {
+    const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const convDir = join(fakeHome, '.gemini', 'antigravity-cli', 'conversations');
+    mkdirSync(convDir, { recursive: true });
+    const dbFile = join(convDir, `${id}.db`);
+    const db = new DatabaseSync(dbFile);
+    db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB);');
+    db.prepare('INSERT INTO steps (idx, step_type, status, metadata) VALUES (?, ?, ?, ?)').run(1, 20, STEP_STATUS_WAITING, null);
+    db.close();
+
+    const timing = await readLatestStepTiming({ conversation_id: id }, { home: fakeHome });
+    assert.equal(timing.waitingForInput, true);
+    assert.equal(readConversationWaitingForInput({ conversation_id: id }, { home: fakeHome }), true);
+
+    const titleWhileWaiting = renderNativeTitle(
+      { conversation_id: id, agent_state: 'working', conversation_title: 'Multi-Account Design' },
+      { home: fakeHome, baseDir: join(fakeHome, '.gemini', 'config', 'agy-bar'), touchMarker: false },
+    );
+    assert.ok(titleWhileWaiting.startsWith('? '), `expected "? " prefix, got "${titleWhileWaiting}"`);
+
+    // Once user answers, step transitions to COMPLETED (3) -> immediately reverts to active working dot.
+    const db2 = new DatabaseSync(dbFile);
+    db2.prepare('UPDATE steps SET status = 3 WHERE idx = 1').run();
+    db2.close();
+
+    const timingAfter = await readLatestStepTiming({ conversation_id: id }, { home: fakeHome });
+    assert.equal(timingAfter.waitingForInput, false);
+    const titleAfter = renderNativeTitle(
+      { conversation_id: id, agent_state: 'working', conversation_title: 'Multi-Account Design' },
+      { home: fakeHome, baseDir: join(fakeHome, '.gemini', 'config', 'agy-bar'), touchMarker: false },
+    );
+    assert.ok(titleAfter.startsWith('● '), `expected "● " prefix, got "${titleAfter}"`);
   } finally {
     rmSync(fakeHome, { recursive: true, force: true });
   }

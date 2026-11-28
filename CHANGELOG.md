@@ -2,6 +2,24 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [1.1.0] - 2026-11-27
+
+### Added
+- **Cross-Platform Browser-Free Multi-Account Vault & Passive Quota CLI (`src/keyring.mjs`, `src/account-store.mjs`, `src/account-quota.mjs`, `bin/agy-bar.mjs`)**:
+  - Added opt-in `agy-bar account` (`save`, `add`, `import`, `ls`, `use`, `next`, `rename`, `rm`, `backup`, `restore`) and `agy-bar switch` commands with zero third-party dependencies and zero private API calls (untouched unless invoked).
+  - **Native OS Credential Bridges on macOS, Linux, and Windows**: macOS Keychain via `/usr/bin/security -i` stdin `-X <hex>` (zero secret exposure in `ps` argv; preserves existing Keychain ACL on `-U` updates), Linux Secret Service via `secret-tool` stdin (auto-falling back to `0600` local file on headless/SSH machines), and Windows Credential Manager via zero-dependency PowerShell P/Invoke (`advapi32.dll`, stdin JSON, UTF-8/UTF-16LE read support), mirrored atomically with `~/.gemini/jetski-standalone-oauth-token` (`0600`).
+  - **Multi-Terminal Concurrency Protection**: Cross-platform atomic lockfile with dead-PID/stale recovery, `refresh_token` / JWT `sub` / `emailHash` identity matching across hourly `access_token` refreshes (including `go-keyring-base64:` decoding), pre-switch refresh writeback, atomic rollback on write failure, and a zero-overhead `agy-bar run` drift guard that saves refreshed tokens from background terminals without ever clobbering manual untracked logins.
+  - **Cockpit Tools & JSON Importer (`src/account-import.mjs`)**: One-command `agy-bar account import` discovers Cockpit Tools (`~/.cockpit_tools` / `~/.antigravity_cockpit`) or exported JSON files, decrypts Cockpit Tools' local AES-256-GCM envelopes using Node.js `node:crypto`, seeds passive 5h/7d quota snapshots & `[ULTRA]`/`[PRO]`/`[FREE]` tiers, and passively links the currently active `agy` login.
+  - **Per-Account Passive Quota Cache & Smart Selector (`src/quota-sync.mjs`, `src/account-quota.mjs`)**: Backward-compatible `v2` `quota-cache.json` preserves per-account 5h/7d buckets across switches (14-day retention), computes `READY` / `LOW` / `LIMITED` / `UNKNOWN` with reset-due auto-promotion and weekly-cap blocking, supports `agy-bar switch next --family gemini|claude|auto`, interactive arrow-key terminal picker, zero-secret `--json` projection, and `scrypt + AES-256-GCM` encrypted vault backup/restore.
+- **Lossless Context Handoff & Auto-Resume Guard (`src/handoff.mjs`, `src/proxy.mjs`, `src/render.mjs`, `src/config.mjs`)**:
+  - `agy-bar switch ... --handoff` and `agy-bar handoff [--print]` assemble a compact redacted handoff prompt combining active `brain/<id>/*.md` plan/task artifacts, `git log -n 3`, `git status` / `diff --stat`, in-flight file list, and recent redacted `transcript.jsonl` turns, launching fresh `agy -i` through the no-TUN proxy.
+  - **Statusline `SWAP→<alias>` Hint (`swapHint`, default `on`)**: Automatically highlights the best `READY` backup account next to `0%` quota bars whenever the active model family hits `LIMITED`.
+  - **Pre-Launch Auto-Switch (`autoSwitchOnLimit` / `--auto-switch`) & Exit-and-Resume Guard (`autoHandoff` / `--auto-handoff`)**: Optionally skips `LIMITED` accounts before launching `agy`, and upon `/exit` after hitting a model family limit, automatically writes back, switches to the next `READY` account, builds the deep handoff prompt, and resumes `agy -i` in-place (preserving `--model`/`--effort` flags and skipping `-p`/`--print` mode).
+
+### Fixed
+- **Interactive `ask_question` Waiting State (`src/step-timing.mjs`, `src/agent-state.mjs`, `src/statusline.mjs`, `src/title.mjs`, `src/telemetry.mjs`)**:
+  - When Antigravity CLI pauses on an `ask_question` prompt while still reporting `agent_state: "working"`, `agy-bar` now detects numeric `steps.status = 9` (`WAITING`, indexed read-only lookup, zero chat text read), lighting up `?` in the terminal tab title, `INPUT` on statusline Line 1, and `input` in `agy-bar monitor`, and immediately reverting once answered.
+
 ## [1.0.1] - 2026-11-27
 
 ### Fixed & Improved

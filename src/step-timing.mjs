@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const UUID_RE = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+export const STEP_STATUS_WAITING = 9;
 
 let cachedDatabaseSync;
 function loadDatabaseSync() {
@@ -143,7 +144,10 @@ export function getDbVersionStamp(dbPath) {
   }
 }
 
-export async function readLatestStepTiming(payload, { home = homedir(), prevDbStamp = null } = {}) {
+export async function readLatestStepTiming(
+  payload,
+  { home = homedir(), prevDbStamp = null, prevWaitingForInput = undefined } = {},
+) {
   const id = payload?.conversation_id || payload?.session_id;
   if (typeof id !== 'string' || !UUID_RE.test(id)) return null;
 
@@ -152,7 +156,9 @@ export async function readLatestStepTiming(payload, { home = homedir(), prevDbSt
 
   const dbStamp = getDbVersionStamp(dbPath);
   if (prevDbStamp && dbStamp && dbStamp === prevDbStamp) {
-    return { unchanged: true, dbStamp };
+    return typeof prevWaitingForInput === 'boolean'
+      ? { unchanged: true, dbStamp, waitingForInput: prevWaitingForInput }
+      : { unchanged: true, dbStamp };
   }
 
   let db;
@@ -162,11 +168,54 @@ export async function readLatestStepTiming(payload, { home = homedir(), prevDbSt
     const row = db
       .prepare('SELECT idx, metadata FROM steps WHERE step_type = 15 AND status = 3 ORDER BY idx DESC LIMIT 1')
       .get();
+    // Indexed numeric enum lookup (status = 9 -> WAITING for ask_question/user input); zero chat text read.
+    const waitingRow = db.prepare(`SELECT 1 AS w FROM steps WHERE status = ${STEP_STATUS_WAITING} LIMIT 1`).get();
+    const waitingForInput = Boolean(waitingRow?.w);
     const parsed = row ? parseStepTimingMetadata(row.metadata, row.idx) : null;
-    return parsed ? { ...parsed, dbStamp } : dbStamp ? { unchanged: false, dbStamp } : null;
+    return parsed
+      ? { ...parsed, dbStamp, waitingForInput }
+      : dbStamp
+        ? { unchanged: false, dbStamp, waitingForInput }
+        : null;
   } catch {
     // Gracefully fall back on Node < 22.13, locked DBs, or schema changes.
     return null;
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // Ignore close errors.
+    }
+  }
+}
+
+// Synchronous indexed lookup for native title hook: checks ONLY whether any step in the
+// active conversation currently has numeric status = 9 (WAITING, e.g. ask_question).
+export function readConversationWaitingForInput(
+  payload,
+  { home = homedir(), prevDbStamp = null, prevWaitingForInput = false } = {},
+) {
+  const id = typeof payload === 'string' ? payload : payload?.conversation_id || payload?.session_id;
+  if (typeof id !== 'string' || !UUID_RE.test(id)) return false;
+
+  const dbPath = join(home, '.gemini', 'antigravity-cli', 'conversations', `${id}.db`);
+  if (!existsSync(dbPath)) return false;
+
+  const dbStamp = getDbVersionStamp(dbPath);
+  if (prevDbStamp && dbStamp && dbStamp === prevDbStamp) {
+    return Boolean(prevWaitingForInput);
+  }
+
+  const DatabaseSync = loadDatabaseSync();
+  if (!DatabaseSync) return false;
+
+  let db;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    const waitingRow = db.prepare(`SELECT 1 AS w FROM steps WHERE status = ${STEP_STATUS_WAITING} LIMIT 1`).get();
+    return Boolean(waitingRow?.w);
+  } catch {
+    return false;
   } finally {
     try {
       db?.close();

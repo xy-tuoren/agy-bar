@@ -199,3 +199,10 @@ export function clipAnsi(text, maxWidth) {
 
   return hasAnsi && !out.endsWith('\x1b[0m') ? `${out}\x1b[0m` : out;
 }
+
+export function padDisplayEnd(text, targetWidth) {
+  const str = String(text ?? '');
+  const w = visibleWidth(str);
+  if (w >= targetWidth) return str;
+  return str + ' '.repeat(targetWidth - w);
+}

@@ -2,6 +2,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readAccountIndex, readActiveAccountState } from './account-store.mjs';
 import { configDir, configPath, DEFAULT_CONFIG, loadConfig, PRESETS, saveConfig } from './config.mjs';
 import { SAMPLE_PAYLOADS } from './preview.mjs';
 import { redactProxyUrl } from './proxy.mjs';
@@ -528,6 +529,21 @@ export function runDoctor({ home = homedir(), platform = process.platform, env =
     ok: true,
     optional: true,
     detail: proxyDetail,
+  });
+
+  const acctIndex = readAccountIndex({ baseDir: configDir(home) });
+  const acctState = readActiveAccountState({ baseDir: configDir(home) });
+  const activeAcct = acctState?.activeAccountId
+    ? acctIndex.accounts.find((a) => a.id === acctState.activeAccountId)
+    : null;
+  checks.push({
+    name: 'Multi-account vault',
+    ok: true,
+    optional: true,
+    detail:
+      acctIndex.accounts.length > 0
+        ? `${acctIndex.accounts.length} saved${activeAcct ? ` (active: ${activeAcct.alias})` : ''} · run "agy-bar account ls"`
+        : 'not configured (optional — run "agy-bar account save <alias>" to enable)',
   });
 
   const sampleOutput = renderStatusline(SAMPLE_PAYLOADS.normal, {

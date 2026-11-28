@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { sanitizeText } from './ansi.mjs';
 import { configDir, loadConfig } from './config.mjs';
 import { readGitInfo } from './git.mjs';
-import { readConversationSummaryTitle } from './step-timing.mjs';
+import { readConversationSummaryTitle, readConversationWaitingForInput } from './step-timing.mjs';
 import { buildTabTitle } from './tab-title.mjs';
 import { deriveSessionId, peekSessionState, resolveSessionTitles, sessionsDir } from './telemetry.mjs';
 
@@ -111,8 +111,23 @@ export function renderNativeTitle(
     }
   }
 
-  const effectivePayload =
-    conversationTitle && !hasPayloadTitle ? { ...p, conversation_title: conversationTitle } : p;
+  const rawState = String(p?.agent_state || '').trim().toLowerCase();
+  const isBusyState = rawState === 'working' || rawState === 'tool_use' || rawState === 'thinking';
+  const waitingForInput =
+    p?.waiting_for_input === true ||
+    (isBusyState &&
+      p?.tool_confirmation_pending !== true &&
+      config.dbTiming !== false &&
+      readConversationWaitingForInput(p, {
+        home,
+        prevDbStamp: prev?.dbStamp ?? null,
+        prevWaitingForInput: Boolean(prev?.dbWaitingForInput),
+      }));
+
+  let effectivePayload = conversationTitle && !hasPayloadTitle ? { ...p, conversation_title: conversationTitle } : p;
+  if (waitingForInput && effectivePayload.waiting_for_input !== true) {
+    effectivePayload = { ...effectivePayload, waiting_for_input: true };
+  }
   const title = buildTabTitle(effectivePayload, { config, git, customTitle });
   if (touchMarker) {
     touchNativeTitleMarker(sessionId, { now, hostPid, baseDir });

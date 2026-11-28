@@ -666,7 +666,7 @@ function buildSessionSegment(opts, config, palette, color, telemetry) {
   return fg(parts.join('·'), palette.muted, color);
 }
 
-function buildQuotaSegment(entries, opts, config, palette, color, now, rawQuota = null) {
+function buildQuotaSegment(entries, opts, config, palette, color, now, rawQuota = null, swapHint = null) {
   if (!entries.length) return '';
   const { show, barStyle, barWidth, quotaWarn, quotaDanger } = config;
   const quotaMap = rawQuota && typeof rawQuota === 'object' ? rawQuota : Object.fromEntries(entries.map((e) => [e.id, e.bucket]));
@@ -712,6 +712,10 @@ function buildQuotaSegment(entries, opts, config, palette, color, now, rawQuota 
     return pieces.join(' ');
   });
 
+  if (swapHint?.alias && config.swapHint !== false && !opts.tight) {
+    parts.push(bold(fg(`SWAP→${swapHint.alias}`, palette.accent, color), color));
+  }
+
   return joinWithSep(parts, opts.tight ? ' ' : ' │ ', palette, color);
 }
 
@@ -722,7 +726,7 @@ function renderMetricsRow(
   palette,
   color,
   now,
-  { includePrefix = false, git = null, telemetry = null } = {},
+  { includePrefix = false, git = null, telemetry = null, swapHint = null } = {},
 ) {
   const context = payload?.context_window || {};
   const quotaEntries = selectQuotaEntries(payload?.quota, payload?.model, config.show);
@@ -770,7 +774,7 @@ function renderMetricsRow(
     if (sessionSeg) leftParts.push(sessionSeg);
 
     const left = joinWithSep(leftParts, stage.tight ? ' ' : sep, palette, color);
-    const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now, payload?.quota);
+    const right = buildQuotaSegment(quotaEntries, stage, config, palette, color, now, payload?.quota, swapHint);
     const minGap = left && right ? 2 : 0;
     chosenLeft = left;
     chosenRight = right;
@@ -801,6 +805,7 @@ export function renderStatusline(
     git = null,
     telemetry = null,
     usageSummary = null,
+    swapHint = null,
     env = {},
     home = homedir(),
     themeOptions = {},
@@ -819,6 +824,7 @@ export function renderStatusline(
       includePrefix: true,
       git,
       telemetry,
+      swapHint,
     });
     return row || renderFallback(cfg, { color: useColor, theme: resolved.name });
   }
@@ -828,6 +834,7 @@ export function renderStatusline(
       includePrefix: false,
       git: null,
       telemetry,
+      swapHint,
     });
     return row || renderFallback(cfg, { color: useColor, theme: resolved.name });
   }
@@ -856,6 +863,7 @@ export function renderStatusline(
     includePrefix: false,
     git: null,
     telemetry,
+    swapHint,
   });
   if (metrics) lines.push(metrics);
 
