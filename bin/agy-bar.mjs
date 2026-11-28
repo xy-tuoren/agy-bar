@@ -1270,6 +1270,7 @@ async function runManagedAgy(rawArgs) {
         return {
           resume: true,
           prompt: handoff.prompt,
+          savedPath: handoff.savedPath,
           fromAlias: sw.fromAlias,
           toAlias: sw.toAlias,
           family: effectiveFamily,
@@ -1305,6 +1306,7 @@ async function runPostSwitchHandoff({ fromAlias, targetAlias, printOnly = false 
   const res = await launchAgyWithProxy(['-i', handoff.prompt], {
     proxyConfig: cfg.proxy,
     syncAccount: syncActiveAccountBeforeLaunch,
+    handoffSavedPath: handoff.savedPath,
   });
   if (res.exitCode) process.exitCode = res.exitCode;
 }
@@ -1372,6 +1374,7 @@ async function handleHandoffCommand(args) {
   const res = await launchAgyWithProxy(['-i', handoff.prompt], {
     proxyConfig: cfg.proxy,
     syncAccount: syncActiveAccountBeforeLaunch,
+    handoffSavedPath: handoff.savedPath,
   });
   if (res.exitCode) process.exitCode = res.exitCode;
 }

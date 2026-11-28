@@ -8,6 +8,7 @@ export const AGY_KEYRING_SERVICE = 'gemini';
 export const AGY_KEYRING_ACCOUNT = 'antigravity';
 export const VAULT_KEYRING_SERVICE = 'agy-bar-account';
 export const AGY_FALLBACK_TOKEN_FILENAME = 'jetski-standalone-oauth-token';
+export const WINDOWS_CRED_BLOB_LIMIT = 2560;
 
 const SAFE_IDENT_RE = /^[a-zA-Z0-9._:@/-]{1,128}$/;
 
@@ -62,9 +63,69 @@ export function buildMacAddGenericPasswordLine({ service, account, secret, updat
   return `${parts.join(' ')}\n`;
 }
 
+export function compactWindowsCredentialPayload(rawSecret, { maxBytes = WINDOWS_CRED_BLOB_LIMIT } = {}) {
+  let str = String(rawSecret ?? '').trim();
+  const prefix = 'go-keyring-base64:';
+  if (str.startsWith(prefix)) {
+    try {
+      str = Buffer.from(str.slice(prefix.length), 'base64').toString('utf8').trim();
+    } catch {
+      // Keep original string if malformed base64.
+    }
+  }
+
+  let parsed = null;
+  try {
+    const candidate = JSON.parse(str);
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      parsed = candidate;
+    }
+  } catch {
+    parsed = null;
+  }
+
+  if (!parsed) {
+    const byteLength = Buffer.byteLength(str, 'utf8');
+    return { value: str, byteLength, fits: byteLength <= maxBytes, trimmedIdToken: false };
+  }
+
+  // Promote nested token.id_token and drop duplicate to stay well under Windows' 2560-byte CredWriteW limit.
+  const copy = { ...parsed };
+  if (copy.token && typeof copy.token === 'object' && !Array.isArray(copy.token)) {
+    const nested = { ...copy.token };
+    if (typeof nested.id_token === 'string' && nested.id_token.trim()) {
+      copy.id_token = nested.id_token.trim();
+      delete nested.id_token;
+    }
+    copy.token = nested;
+  }
+
+  let compact = JSON.stringify(copy);
+  let byteLength = Buffer.byteLength(compact, 'utf8');
+  if (byteLength <= maxBytes) {
+    return { value: compact, byteLength, fits: true, trimmedIdToken: false };
+  }
+
+  // If a huge enterprise JWT id_token still pushes the blob over 2560 bytes, drop optional id_token
+  // for the Windows Credential Manager copy (mirror file & file vault retain the full payload).
+  if (typeof copy.id_token === 'string' && copy.id_token.length > 0) {
+    const withoutId = { ...copy };
+    delete withoutId.id_token;
+    const trimmed = JSON.stringify(withoutId);
+    const trimmedBytes = Buffer.byteLength(trimmed, 'utf8');
+    if (trimmedBytes <= maxBytes) {
+      return { value: trimmed, byteLength: trimmedBytes, fits: true, trimmedIdToken: true };
+    }
+  }
+
+  return { value: compact, byteLength, fits: false, trimmedIdToken: false };
+}
+
 export function buildWindowsCredScript() {
   return [
     '$ErrorActionPreference = "Stop"',
+    '[Console]::InputEncoding = [System.Text.Encoding]::UTF8',
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
     '$rawIn = [Console]::In.ReadToEnd()',
     'if (-not $rawIn) { throw "Missing stdin JSON payload" }',
     '$req = $rawIn | ConvertFrom-Json',
@@ -74,7 +135,7 @@ export function buildWindowsCredScript() {
     'using System.Runtime.InteropServices.ComTypes;',
     'public static class AgyBarWinCred {',
     '  public const uint CRED_TYPE_GENERIC = 1;',
-    '  public const uint CRED_PERSIST_LOCAL_MACHINE = 2;',
+    '  public const uint CRED_PERSIST_ENTERPRISE = 3;',
     '  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]',
     '  public struct CREDENTIAL {',
     '    public uint Flags;',
@@ -125,7 +186,7 @@ export function buildWindowsCredScript() {
     '        UserName = userName,',
     '        CredentialBlobSize = (uint)blob.Length,',
     '        CredentialBlob = ptr,',
-    '        Persist = CRED_PERSIST_LOCAL_MACHINE',
+    '        Persist = CRED_PERSIST_ENTERPRISE',
     '      };',
     '      if (!CredWrite(ref cred, 0)) return Marshal.GetLastWin32Error();',
     '      return 0;',
@@ -160,7 +221,7 @@ export function buildWindowsCredScript() {
     '  @{ ok = $true } | ConvertTo-Json -Compress',
     '} elseif ($op -eq "delete") {',
     '  $err = [AgyBarWinCred]::DeleteTarget($target)',
-    '  if ($err -eq 1168) { @{ ok = $true; deleted = $false } | ConvertTo-Json -Compress; exit 0 }',
+    '  if ($err -eq 1168 -or $err -eq 1312) { @{ ok = $true; deleted = $false } | ConvertTo-Json -Compress; exit 0 }',
     '  if ($err -ne 0) { @{ ok = $false; code = $err } | ConvertTo-Json -Compress; exit 1 }',
     '  @{ ok = $true; deleted = $true } | ConvertTo-Json -Compress',
     '} else {',
@@ -409,6 +470,14 @@ function createWindowsKeyring({ execFn = defaultExec, env = process.env } = {}) 
       cachedAvailable = true;
       return parsed;
     }
+    const winCode = Number(parsed?.code || 0);
+    if (winCode === 1312) {
+      // ERROR_NO_SUCH_LOGON_SESSION (e.g. headless Windows OpenSSH without interactive logon session).
+      cachedAvailable = false;
+      const err = new Error('Windows Credential Manager unavailable in this logon session (Win32 error 1312)');
+      err.code = 'KEYRING_UNAVAILABLE';
+      throw err;
+    }
     const detail = parsed?.code
       ? `Win32 error ${parsed.code}`
       : parsed?.error || res.stderr.trim() || `exit ${res.status}`;
@@ -444,11 +513,19 @@ function createWindowsKeyring({ execFn = defaultExec, env = process.env } = {}) 
     },
     set(service, account, secret) {
       const a = assertSafeCredentialIdentifier(account, 'account');
+      const compacted = compactWindowsCredentialPayload(secret);
+      if (!compacted.fits) {
+        const err = new Error(
+          `Credential exceeds Windows Credential Manager ${WINDOWS_CRED_BLOB_LIMIT}-byte limit (${compacted.byteLength} bytes)`,
+        );
+        err.code = 'KEYRING_UNAVAILABLE';
+        throw err;
+      }
       invoke({
         op: 'set',
         target: targetOf(service, account),
         user: a,
-        secretB64: Buffer.from(String(secret ?? ''), 'utf8').toString('base64'),
+        secretB64: Buffer.from(compacted.value, 'utf8').toString('base64'),
       });
     },
     delete(service, account) {

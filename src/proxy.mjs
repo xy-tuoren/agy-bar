@@ -739,7 +739,24 @@ export function parseRunArgs(args = []) {
   return { options, agyArgs };
 }
 
-export function buildHandoffResumeArgs(originalAgyArgs = [], promptText) {
+export function formatPromptArgForTarget(
+  promptText,
+  { target = null, savedHandoffPath = null, platform = process.platform } = {},
+) {
+  const raw = String(promptText ?? '');
+  if (platform === 'win32' && target?.shell === true && /[\r\n&|<>^%"]/.test(raw)) {
+    // Windows cmd.exe (.cmd/.bat shims) breaks on newlines and shell metacharacters.
+    // Point the incoming session at the already-written handoff Markdown file instead.
+    if (savedHandoffPath) {
+      const safePath = String(savedHandoffPath).replace(/\\/g, '/').replace(/["&|<>^%\r\n]/g, '');
+      return `Continue the ongoing task using the workspace handoff saved at ${safePath}. Read that file first, briefly confirm what is done vs remaining, and resume immediately.`;
+    }
+    return raw.replace(/[\r\n]+/g, ' ').replace(/[&|<>^%"]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  return raw;
+}
+
+export function buildHandoffResumeArgs(originalAgyArgs = [], promptText, targetOpts = {}) {
   const preserved = [];
   const skipValueFlags = new Set(['-r', '--resume', '--conversation', '-i', '--prompt-interactive', '-p', '--print', '--prompt']);
   const skipBoolFlags = new Set(['-c', '--continue']);
@@ -753,7 +770,7 @@ export function buildHandoffResumeArgs(originalAgyArgs = [], promptText) {
     if ([...skipValueFlags].some((f) => arg.startsWith(`${f}=`))) continue;
     preserved.push(arg);
   }
-  preserved.push('-i', promptText);
+  preserved.push('-i', formatPromptArgForTarget(promptText, targetOpts));
   return preserved;
 }
 
@@ -770,6 +787,7 @@ export async function launchAgyWithProxy(
     syncAccount = null,
     autoSwitchAccount = null,
     autoHandoffHook = null,
+    handoffSavedPath = null,
     minAutoHandoffRunMs = 3000,
     maxAutoHandoffHops = 5,
   } = {},
@@ -860,6 +878,17 @@ export async function launchAgyWithProxy(
   const target = resolveSpawnTarget(executable, { platform, env });
   const isPrintMode = agyArgs.some((a) => a === '-p' || a === '--print' || a === '--prompt' || a.startsWith('--print=') || a.startsWith('--prompt='));
 
+  const sanitizeArgsForWinShell = (argsList, savedPath) => {
+    if (platform !== 'win32' || target.shell !== true) return argsList;
+    const out = [...argsList];
+    for (let idx = 0; idx < out.length - 1; idx++) {
+      if (out[idx] === '-i' || out[idx] === '--prompt-interactive') {
+        out[idx + 1] = formatPromptArgForTarget(out[idx + 1], { target, savedHandoffPath: savedPath, platform });
+      }
+    }
+    return out;
+  };
+
   const spawnOnce = (currentArgs) =>
     new Promise((resolveChild, rejectChild) => {
       const child = spawnFn(target.command, currentArgs, {
@@ -917,7 +946,7 @@ export async function launchAgyWithProxy(
       });
     });
 
-  let currentArgs = agyArgs;
+  let currentArgs = sanitizeArgsForWinShell(agyArgs, handoffSavedPath);
   let hops = 0;
 
   while (true) {
@@ -955,7 +984,11 @@ export async function launchAgyWithProxy(
             `agy-bar: "${nextHop.fromAlias}" hit ${nextHop.family || 'quota'} limit — switched -> "${nextHop.toAlias}" and resuming with handoff (${hops}/${maxAutoHandoffHops})...\n`,
           );
         }
-        currentArgs = buildHandoffResumeArgs(agyArgs, nextHop.prompt);
+        currentArgs = buildHandoffResumeArgs(agyArgs, nextHop.prompt, {
+          target,
+          savedHandoffPath: nextHop.savedPath || handoffSavedPath,
+          platform,
+        });
         continue;
       }
     }

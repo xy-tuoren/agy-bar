@@ -2,6 +2,15 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [1.1.1] - 2026-11-27
+
+### Fixed & Hardened (Windows)
+- **Windows Credential Manager Size Limit, Persist & OpenSSH Fallback (`src/keyring.mjs`)**:
+  - Compacted Windows Credential Manager payloads (`compactWindowsCredentialPayload`) before `CredWriteW` (unwrapping `go-keyring-base64:`, deduplicating nested `token.id_token`, trimming optional oversized `id_token` for the CredMan blob copy while keeping the full payload in the mirror file / file vault, and falling back cleanly via `KEYRING_UNAVAILABLE` if a blob still exceeds Windows' 2,560-byte `CRED_MAX_CREDENTIAL_BLOB_SIZE` limit).
+  - Aligned Windows credential persistence with `CRED_PERSIST_ENTERPRISE = 3` (matching `agy` / `go-keyring`), explicitly forced UTF-8 stdin/stdout encoding in PowerShell 5.1 (preventing GBK/CP936 mojibake on non-UTF-8 Windows locales), and handled Win32 error `1312` (`ERROR_NO_SUCH_LOGON_SESSION`, e.g. Windows OpenSSH) by gracefully falling back to `0600` file storage.
+- **Windows `.cmd`/`.bat` Shim Multi-Line Handoff Safety (`src/proxy.mjs`, `bin/agy-bar.mjs`)**:
+  - When launching `agy` through a `.cmd`/`.bat` shim (`shell: true`) on Windows, multi-line Markdown handoff prompts containing newlines or `cmd.exe` metacharacters (`&`, `|`, `>`, `<`, `%`, `"`) automatically switch to a single-line `cmd.exe`-safe pointer referencing the saved `~/.gemini/config/agy-bar/handoffs/latest.md` file, while native `agy.exe` (`shell: false`) keeps passing the full prompt directly.
+
 ## [1.1.0] - 2026-11-27
 
 ### Added

@@ -9,13 +9,16 @@ import {
   agyFallbackTokenPath,
   assertSafeCredentialIdentifier,
   buildMacAddGenericPasswordLine,
+  buildWindowsCredScript,
   clearActiveAgyCredential,
+  compactWindowsCredentialPayload,
   createKeyringBackend,
   createMemoryKeyring,
   decodeSecurityHexIfNeeded,
   decodeWindowsSecretBuffer,
   readActiveAgyCredential,
   VAULT_KEYRING_SERVICE,
+  WINDOWS_CRED_BLOB_LIMIT,
   writeActiveAgyCredential,
 } from '../src/keyring.mjs';
 
@@ -217,6 +220,51 @@ test('Windows Credential Manager adapter uses stdin JSON, handles Win32 1168, an
 
   assert.equal(win.delete(AGY_KEYRING_SERVICE, AGY_KEYRING_ACCOUNT), true);
   assert.equal(win.delete(AGY_KEYRING_SERVICE, AGY_KEYRING_ACCOUNT), false);
+
+  // Verify UTF-8 console encoding & CRED_PERSIST_ENTERPRISE = 3 in generated PowerShell script.
+  const psScript = buildWindowsCredScript();
+  assert.ok(psScript.includes('[Console]::InputEncoding = [System.Text.Encoding]::UTF8'));
+  assert.ok(psScript.includes('CRED_PERSIST_ENTERPRISE = 3'));
+
+  // Verify 2560-byte compaction (base64 unwrap, duplicate nested id_token dedup, oversized id_token trim, hard fallback).
+  const dupToken = JSON.stringify({
+    token: { access_token: 'a1', refresh_token: 'r1', id_token: 'eyJ.small.sig' },
+    auth_method: 'consumer',
+    id_token: 'eyJ.small.sig',
+  });
+  const wrappedB64 = `go-keyring-base64:${Buffer.from(dupToken, 'utf8').toString('base64')}`;
+  const compacted = compactWindowsCredentialPayload(wrappedB64);
+  assert.equal(compacted.fits, true);
+  assert.equal(compacted.trimmedIdToken, false);
+  const parsedCompact = JSON.parse(compacted.value);
+  assert.equal(parsedCompact.id_token, 'eyJ.small.sig');
+  assert.equal(parsedCompact.token.id_token, undefined);
+
+  const hugeJwtPayload = JSON.stringify({
+    token: { access_token: 'a1', refresh_token: 'r1' },
+    id_token: 'x'.repeat(2700),
+  });
+  const trimmedJwt = compactWindowsCredentialPayload(hugeJwtPayload);
+  assert.equal(trimmedJwt.fits, true);
+  assert.equal(trimmedJwt.trimmedIdToken, true);
+  assert.ok(trimmedJwt.byteLength <= WINDOWS_CRED_BLOB_LIMIT);
+
+  const trulyHuge = JSON.stringify({ token: { access_token: 'a'.repeat(3000), refresh_token: 'r1' } });
+  assert.throws(
+    () => win.set(AGY_KEYRING_SERVICE, AGY_KEYRING_ACCOUNT, trulyHuge),
+    (err) => err.code === 'KEYRING_UNAVAILABLE',
+  );
+
+  // Win32 error 1312 (ERROR_NO_SUCH_LOGON_SESSION under OpenSSH) degrades gracefully to KEYRING_UNAVAILABLE.
+  const winSsh = createKeyringBackend({
+    platform: 'win32',
+    execFn: () => ({ status: 1, stdout: JSON.stringify({ ok: false, code: 1312 }) + '\n', stderr: '', error: null }),
+  });
+  assert.throws(
+    () => winSsh.get(AGY_KEYRING_SERVICE, AGY_KEYRING_ACCOUNT),
+    (err) => err.code === 'KEYRING_UNAVAILABLE',
+  );
+  assert.equal(winSsh.isAvailable(), false);
 });
 
 test('read/write/clearActiveAgyCredential syncs keyring and 0600 fallback file across available and headless modes', () => {

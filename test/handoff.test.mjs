@@ -14,7 +14,7 @@ import {
   findLatestConversationForCwd,
   prepareHandoff,
 } from '../src/handoff.mjs';
-import { buildHandoffResumeArgs, launchAgyWithProxy, parseRunArgs } from '../src/proxy.mjs';
+import { buildHandoffResumeArgs, formatPromptArgForTarget, launchAgyWithProxy, parseRunArgs } from '../src/proxy.mjs';
 
 test('handoff discovers latest conversation, redacts transcript secrets, and builds compact prompt', () => {
   const home = mkdtempSync(join(tmpdir(), 'agy-bar-handoff-home-'));
@@ -221,4 +221,21 @@ test('launchAgyWithProxy supports pre-launch auto-switch and exit-and-resume aut
   });
   assert.equal(printRes.hops, 0);
   assert.equal(printHookRan, false);
+
+  // Windows .cmd shim safety: multi-line Markdown prompt with cmd.exe metacharacters degrades to single-line handoff file pointer.
+  const multilineMd = 'Continue task\n## Git & Diff\ncmd1 | cmd2 > out';
+  const winCmdSafe = formatPromptArgForTarget(multilineMd, {
+    platform: 'win32',
+    target: { command: 'C:\\Tools\\agy.cmd', shell: true },
+    savedHandoffPath: 'C:\\Users\\alice\\.gemini\\config\\agy-bar\\handoffs\\latest.md',
+  });
+  assert.ok(!/[\r\n&|<>^%"]/.test(winCmdSafe));
+  assert.ok(winCmdSafe.includes('C:/Users/alice/.gemini/config/agy-bar/handoffs/latest.md'));
+  // Native agy.exe (shell: false) preserves full multi-line prompt verbatim.
+  const winExeRaw = formatPromptArgForTarget(multilineMd, {
+    platform: 'win32',
+    target: { command: 'C:\\Tools\\agy.exe', shell: false },
+    savedHandoffPath: 'C:\\Users\\alice\\.gemini\\config\\agy-bar\\handoffs\\latest.md',
+  });
+  assert.equal(winExeRaw, multilineMd);
 });
