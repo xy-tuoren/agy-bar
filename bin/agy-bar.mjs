@@ -22,6 +22,7 @@ import {
   renameAccount,
   restorePreservedLogin,
   saveCurrentAccount,
+  setAccountWeight,
   switchToAccount,
   syncActiveAccountBeforeLaunch,
   VAULT_STORAGE_MODES,
@@ -152,7 +153,8 @@ export const HELP_TEXT = [
   '    add [alias]           Preserve current account, launch official agy for one-time OAuth, and capture it',
   '    import [path]         Import accounts from Cockpit Tools (~/.cockpit_tools) or an exported JSON file',
   '    use <alias>           Switch active agy credential to <alias> without opening a browser',
-  `    next [--family <f>]   Auto-switch to best READY account (${ACCOUNT_FAMILIES.join(' | ')})`,
+  `    next [--family <f>]   Auto-switch to highest-weight READY account (${ACCOUNT_FAMILIES.join(' | ')})`,
+  '    weight <alias> <0-100> Set account priority weight (higher = picked first; 0 = manual only; supports multiple pairs)',
   '    rename <old> <new>    Rename a saved account alias',
   '    rm <alias>            Remove a saved account from vault',
   '    backup <file>         Export AES-256-GCM encrypted vault backup (passphrase prompt or AGY_BAR_BACKUP_PASSPHRASE)',
@@ -276,6 +278,7 @@ function parseFlags(args) {
         '--storage',
         '--passphrase',
         '--from',
+        '--weight',
       ].includes(arg)
     ) {
       const value = args[++i];
@@ -1167,10 +1170,11 @@ async function promptAccountPicker(rows) {
     const formatRow = (row, idx) => {
       const cursor = idx === selected ? '›' : ' ';
       const active = row.isActive ? '●' : ' ';
+      const wt = row.weight === 0 ? 'off' : `w${row.weight}`;
       const g5 = row.gemini.fiveHourPct !== null ? `G:${row.gemini.fiveHourPct}%` : 'G:--';
       const c5 = row.claude.fiveHourPct !== null ? `C:${row.claude.fiveHourPct}%` : 'C:--';
       const email = row.maskedEmail ? ` (${row.maskedEmail})` : '';
-      return ` ${cursor} ${active} ${row.alias.padEnd(14)} ${row.overallStatus.padEnd(7)}  ${g5.padEnd(6)} ${c5.padEnd(6)}${email}`;
+      return ` ${cursor} ${active} ${row.alias.padEnd(14)} ${wt.padEnd(4)} ${row.overallStatus.padEnd(7)}  ${g5.padEnd(6)} ${c5.padEnd(6)}${email}`;
     };
 
     const render = () => {
@@ -1330,6 +1334,11 @@ async function handleSwitchCommand(args) {
       currentId: state?.activeAccountId || null,
       family: flags.family || 'auto',
     });
+    if (!pickedInfo?.account) {
+      throw new Error(
+        'No auto-selectable accounts available (all other accounts have weight 0 / manual-only). Use "agy-bar switch <alias>" or set a weight with "agy-bar account weight <alias> <1-100>".',
+      );
+    }
     targetAlias = pickedInfo.account.alias;
   }
 
@@ -1388,11 +1397,12 @@ async function handleAccountCommand(args) {
         'Usage: agy-bar account <subcommand> [options]',
         '',
         '  ls | status [--json] [--plain]                  List saved accounts, 5h/7d quotas & READY/LIMITED timers',
-        `  save [alias] [--force] [--storage ${VAULT_STORAGE_MODES.join('|')}]  Save current logged-in agy session into vault`,
-        `  add [alias] [--force] [--storage ${VAULT_STORAGE_MODES.join('|')}]   Save current account, launch agy for one-time OAuth, capture new slot`,
+        `  save [alias] [--weight <0-100>] [--force] [--storage ${VAULT_STORAGE_MODES.join('|')}]  Save current logged-in agy session`,
+        `  add [alias] [--weight <0-100>] [--force] [--storage ${VAULT_STORAGE_MODES.join('|')}]   Save current, run one-time OAuth, capture new slot`,
         `  import [path] [--from ${IMPORT_SOURCES.join('|')}] [--dry-run] [--include-disabled] [--force]  Import from Cockpit Tools or JSON`,
         '  use <alias> [--handoff] [--print]               Switch active agy account without opening a browser',
-        `  next [--family ${ACCOUNT_FAMILIES.join('|')}] [--handoff]     Auto-switch to best READY account`,
+        `  next [--family ${ACCOUNT_FAMILIES.join('|')}] [--handoff]     Auto-switch to highest-weight READY account`,
+        '  weight <alias> <0-100> [<alias2> <w2>...]       Set account priority weight (higher = preferred; 0 = manual only)',
         '  rename <old> <new>                              Rename an account alias',
         '  rm <alias>                                      Remove an account from the local vault',
         '  backup <file> [--passphrase <pw>]               Export AES-256-GCM encrypted vault backup',
@@ -1429,11 +1439,12 @@ async function handleAccountCommand(args) {
     const { flags, positional } = parseFlags(rest);
     const res = saveCurrentAccount({
       alias: positional[0] || null,
+      weight: flags.weight !== undefined ? Number(flags.weight) : undefined,
       force: Boolean(flags.force),
       storage: flags.storage || 'auto',
     });
     console.log(
-      `${res.action === 'updated' ? 'Updated' : 'Saved'} account "${res.account.alias}"${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''} [${res.account.storageBackend}, read from ${res.source}].`,
+      `${res.action === 'updated' ? 'Updated' : 'Saved'} account "${res.account.alias}"${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''} [weight=${res.account.weight}, ${res.account.storageBackend}, read from ${res.source}].`,
     );
     return;
   }
@@ -1466,11 +1477,12 @@ async function handleAccountCommand(args) {
 
     const res = saveCurrentAccount({
       alias,
+      weight: flags.weight !== undefined ? Number(flags.weight) : undefined,
       force: Boolean(flags.force),
       storage: flags.storage || 'auto',
     });
     console.log(
-      `Captured & activated account "${res.account.alias}"${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''} [${res.account.storageBackend}].`,
+      `Captured & activated account "${res.account.alias}"${res.account.maskedEmail ? ` (${res.account.maskedEmail})` : ''} [weight=${res.account.weight}, ${res.account.storageBackend}].`,
     );
     return;
   }
@@ -1544,6 +1556,23 @@ async function handleAccountCommand(args) {
       ...(flags.handoff ? ['--handoff'] : []),
       ...(flags.print ? ['--print'] : []),
     ]);
+    return;
+  }
+
+  if (sub === 'weight' || sub === 'priority' || sub === 'set-weight') {
+    const { positional } = parseFlags(rest);
+    if (positional.length < 2 || positional.length % 2 !== 0) {
+      throw new Error(
+        'Usage: agy-bar account weight <alias> <0-100> [<alias2> <weight2>...]  (higher = preferred; 0 = manual only)',
+      );
+    }
+    for (let i = 0; i < positional.length; i += 2) {
+      const target = positional[i];
+      const rawWeight = positional[i + 1];
+      const res = setAccountWeight(target, rawWeight);
+      const note = res.newWeight === 0 ? ' (manual only — excluded from auto-switch)' : '';
+      console.log(`Updated weight for "${res.alias}": ${res.oldWeight} -> ${res.newWeight}${note}`);
+    }
     return;
   }
 

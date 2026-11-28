@@ -213,7 +213,8 @@ agy-bar proxy set 127.0.0.1:7897
 agy-bar account save work       # Snapshot current logged-in agy account into OS keyring (or 0600 fallback)
 agy-bar account add alt1        # Preserve current slot, run one-time official `agy` OAuth, and capture new slot
 agy-bar account import          # Import existing accounts from Cockpit Tools (~/.cockpit_tools) or an exported JSON file
-agy-bar account ls [--json]     # Show all saved accounts, 5h/7d gauges, READY/LOW/LIMITED & reset timers
+agy-bar account ls [--json]     # Show all saved accounts, weights, 5h/7d gauges, READY/LOW/LIMITED & reset timers
+agy-bar account weight main 100 alt1 80 free 0  # Set priority weights (higher = picked first; 0 = manual only)
 agy-bar switch [alias|next]     # Instant browser-free switch (arrow-key picker when omitted; auto-pick best with `next`)
 agy-bar switch next --family claude --handoff  # Switch to best READY Claude account + launch `agy -i` with deep handoff (artifacts + git + transcript)
 agy-bar config set autoSwitchOnLimit on autoHandoff on  # Optional: auto-skip LIMITED accounts on launch & auto-resume on /exit after hitting 0%
@@ -320,7 +321,7 @@ eval "$(agy-bar uninstall --remove-skill --purge --print-cleanup)"
 ## Development
 
 ```sh
-npm test            # Cross-platform Node.js built-in test suite (102 tests, 9-job CI matrix)
+npm test            # Cross-platform Node.js built-in test suite (103 tests, 9-job CI matrix)
 npm run preview     # Render live terminal preview
 npm run preview:svg # Regenerate all 5 showcase SVGs in assets/
 npm run stats       # Show local usage stats

@@ -1,7 +1,13 @@
 import { homedir } from 'node:os';
 import { bold, dim, fg, padDisplayEnd } from './ansi.mjs';
 import { configDir } from './config.mjs';
-import { readAccountIndex, readActiveAccountState, switchToAccount } from './account-store.mjs';
+import {
+  DEFAULT_ACCOUNT_WEIGHT,
+  normalizeAccountWeight,
+  readAccountIndex,
+  readActiveAccountState,
+  switchToAccount,
+} from './account-store.mjs';
 import { createKeyringBackend } from './keyring.mjs';
 import {
   isBucketResetDue,
@@ -136,7 +142,7 @@ export function listAccountsWithQuota({
   const state = readActiveAccountState({ baseDir });
   const allQuotas = readAllAccountQuotas({ baseDir, now });
 
-  return index.accounts.map((slot) => {
+  const rows = index.accounts.map((slot) => {
     const isActive = Boolean(state?.activeAccountId && state.activeAccountId === slot.id);
     const quotaEntry =
       allQuotas[slot.quotaKey] ||
@@ -147,9 +153,11 @@ export function listAccountsWithQuota({
     const gemini = evaluateFamilyQuota(buckets, 'gemini-5h', 'gemini-weekly', now);
     const claude = evaluateFamilyQuota(buckets, '3p-5h', '3p-weekly', now);
     const overallStatus = combineFamilyStatus(gemini, claude);
+    const weight = normalizeAccountWeight(slot.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT });
 
     return {
       ...slot,
+      weight,
       isActive,
       quotaUpdatedAt: quotaEntry?.updatedAt || null,
       gemini,
@@ -157,6 +165,10 @@ export function listAccountsWithQuota({
       overallStatus,
     };
   });
+
+  // Sort display naturally by priority weight (highest first), preserving insertion order for equal weights.
+  rows.sort((a, b) => b.weight - a.weight);
+  return rows;
 }
 
 function familyScore(row, family) {
@@ -187,21 +199,33 @@ function familyScore(row, family) {
   return { statusRank: bestStatusRank, fiveHour, weekly, nextResetTs };
 }
 
-export function pickNextBestAccount(rows, { currentId = null, family = 'auto' } = {}) {
+export function pickNextBestAccount(rows, { currentId = null, family = 'auto', excludeZeroWeight = true } = {}) {
   const normalizedFamily = String(family || 'auto').toLowerCase();
   if (!ACCOUNT_FAMILIES.includes(normalizedFamily)) {
     throw new Error(`Invalid --family "${family}". Choose one of: ${ACCOUNT_FAMILIES.join(', ')}`);
   }
   if (!Array.isArray(rows) || rows.length === 0) return null;
 
-  const candidates = rows.length > 1 && currentId ? rows.filter((r) => r.id !== currentId) : [...rows];
+  const weightOf = (r) => normalizeAccountWeight(r?.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT });
+  let candidates = rows.length > 1 && currentId ? rows.filter((r) => r.id !== currentId) : [...rows];
+  if (excludeZeroWeight) {
+    candidates = candidates.filter((r) => weightOf(r) > 0);
+    if (candidates.length === 0) return null;
+  }
+
   candidates.sort((a, b) => {
     const sa = familyScore(a, normalizedFamily);
     const sb = familyScore(b, normalizedFamily);
     if (sb.statusRank !== sa.statusRank) return sb.statusRank - sa.statusRank;
+    const wa = weightOf(a);
+    const wb = weightOf(b);
     if (sb.statusRank === STATUS_RANK.LIMITED) {
-      // All remaining accounts limited -> pick whichever resets soonest.
+      // All remaining accounts limited -> pick whichever resets soonest, tie-break by higher weight.
       if (sa.nextResetTs !== sb.nextResetTs) return sa.nextResetTs - sb.nextResetTs;
+      if (wb !== wa) return wb - wa;
+    } else if (wb !== wa) {
+      // Higher-weight accounts always take priority among usable accounts of the same readiness tier.
+      return wb - wa;
     }
     if (sb.fiveHour !== sa.fiveHour) return sb.fiveHour - sa.fiveHour;
     if (sb.weekly !== sa.weekly) return sb.weekly - sa.weekly;
@@ -359,6 +383,7 @@ export function sanitizeAccountForJson(row) {
     id: row.id,
     alias: row.alias,
     active: Boolean(row.isActive),
+    weight: normalizeAccountWeight(row.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT }),
     maskedEmail: row.maskedEmail || null,
     tier: row.tier || null,
     authMethod: row.authMethod || 'oauth',
@@ -428,8 +453,8 @@ export function formatAccountTable(rows, { color = true, theme = 'auto', now = D
   const lines = [
     bold('agy-bar accounts', useColor) + dim(`  (${rows.length} saved · passive quota cache, zero private API)`, useColor),
     '',
-    `  ${padDisplayEnd('Account', 16)} ${padDisplayEnd('Status', 8)} ${padDisplayEnd('Gemini (5h / 7d)', 24)} ${padDisplayEnd('Claude (5h / 7d)', 24)} ${padDisplayEnd('Store', 9)} Last Used`,
-    dim(`  ${'─'.repeat(94)}`, useColor),
+    `  ${padDisplayEnd('Account', 16)} ${padDisplayEnd('Wt', 5)} ${padDisplayEnd('Status', 8)} ${padDisplayEnd('Gemini (5h / 7d)', 24)} ${padDisplayEnd('Claude (5h / 7d)', 24)} ${padDisplayEnd('Store', 9)} Last Used`,
+    dim(`  ${'─'.repeat(100)}`, useColor),
   ];
 
   for (const row of rows) {
@@ -441,6 +466,13 @@ export function formatAccountTable(rows, { color = true, theme = 'auto', now = D
     const emailPart = row.maskedEmail ? dim(`(${row.maskedEmail})`, useColor) : '';
     const subline = [emailPart, tierBadge.trim()].filter(Boolean).join(' ');
     const accountCell = `${marker}${aliasText}`;
+    const weightVal = normalizeAccountWeight(row.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT });
+    const weightCell =
+      weightVal === 0
+        ? dim('off', useColor)
+        : weightVal > DEFAULT_ACCOUNT_WEIGHT
+          ? fg(String(weightVal), palette.accent, useColor)
+          : dim(String(weightVal), useColor);
     const statusCell = renderStatusBadge(row.overallStatus, palette, useColor);
     const geminiCell = renderFamilyCell(row.gemini, palette, useColor);
     const claudeCell = renderFamilyCell(row.claude, palette, useColor);
@@ -448,7 +480,7 @@ export function formatAccountTable(rows, { color = true, theme = 'auto', now = D
     const ageCell = dim(formatRelativeAge(row.lastUsedAt, now), useColor);
 
     lines.push(
-      `  ${padDisplayEnd(accountCell, 16)} ${padDisplayEnd(statusCell, 8)} ${padDisplayEnd(geminiCell, 24)} ${padDisplayEnd(claudeCell, 24)} ${padDisplayEnd(storeCell, 9)} ${ageCell}`,
+      `  ${padDisplayEnd(accountCell, 16)} ${padDisplayEnd(weightCell, 5)} ${padDisplayEnd(statusCell, 8)} ${padDisplayEnd(geminiCell, 24)} ${padDisplayEnd(claudeCell, 24)} ${padDisplayEnd(storeCell, 9)} ${ageCell}`,
     );
     if (subline) {
       lines.push(`    ${subline}`);
@@ -458,7 +490,7 @@ export function formatAccountTable(rows, { color = true, theme = 'auto', now = D
   lines.push('');
   lines.push(
     dim(
-      '  Switch: agy-bar switch <alias>   |   Auto-pick best: agy-bar switch next   |   With context: agy-bar switch next --handoff',
+      '  Switch: agy-bar switch <alias|next>   |   Priority: agy-bar account weight <alias> <0-100> (0 = manual only)',
       useColor,
     ),
   );

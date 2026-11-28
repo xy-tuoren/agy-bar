@@ -2,6 +2,15 @@
 
 All notable changes to **agy-bar** are documented here.
 
+## [1.2.0] - 2026-11-27
+
+### Added
+- **Account Priority Weights (`src/account-store.mjs`, `src/account-quota.mjs`, `bin/agy-bar.mjs`)**:
+  - Added per-account priority `weight` (`0..100`, default `50`) configurable via `agy-bar account weight <alias> <0-100> [<alias2> <w2>...]` (aliases: `priority`, `set-weight`) or `--weight <0-100>` on `account save` / `account add`.
+  - Higher-weight `READY` accounts are always preferred first across `agy-bar switch next`, statusline `SWAP→<alias>` hints, pre-launch `autoSwitchOnLimit`, and exit-and-resume `autoHandoff` (falling back to remaining 5h/7d quota and LRU order on equal weights).
+  - Setting `weight = 0` marks an account as **manual-only** (`off` in the `Wt` column): excluded from all automatic switching while still selectable explicitly via `agy-bar switch <alias>`.
+  - `agy-bar account ls` now displays a `Wt` priority column sorted highest-weight first; weights are preserved across `account import` and `AES-256-GCM` `backup` / `restore`.
+
 ## [1.1.1] - 2026-11-27
 
 ### Fixed & Hardened (Windows)

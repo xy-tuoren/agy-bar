@@ -24,6 +24,9 @@ import { hashAccountIdentifier } from './quota-sync.mjs';
 
 export const ALIAS_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}$/;
 export const VAULT_STORAGE_MODES = Object.freeze(['auto', 'keychain', 'file']);
+export const DEFAULT_ACCOUNT_WEIGHT = 50;
+export const MIN_ACCOUNT_WEIGHT = 0;
+export const MAX_ACCOUNT_WEIGHT = 100;
 const LOCK_STALE_MS = 30_000;
 const LOCK_TIMEOUT_MS = 5_000;
 const LOCK_RETRY_MS = 25;
@@ -154,6 +157,27 @@ export function validateAlias(alias) {
     );
   }
   return cleaned;
+}
+
+export function normalizeAccountWeight(value, { fallback = DEFAULT_ACCOUNT_WEIGHT, strict = false } = {}) {
+  if (value === undefined || value === null || value === '') {
+    if (strict) {
+      throw new Error(
+        `Weight must be an integer between ${MIN_ACCOUNT_WEIGHT} and ${MAX_ACCOUNT_WEIGHT} (higher = higher priority; 0 = manual only).`,
+      );
+    }
+    return fallback;
+  }
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < MIN_ACCOUNT_WEIGHT || n > MAX_ACCOUNT_WEIGHT) {
+    if (strict) {
+      throw new Error(
+        `Invalid weight "${value}". Use an integer between ${MIN_ACCOUNT_WEIGHT} and ${MAX_ACCOUNT_WEIGHT} (higher = higher priority; 0 = manual only, excluded from auto-switch).`,
+      );
+    }
+    return fallback;
+  }
+  return n;
 }
 
 function isPidAlive(pid) {
@@ -431,10 +455,17 @@ function createSlotId() {
   return `acct-${randomBytes(6).toString('hex')}`;
 }
 
-function upsertSlotRecord(index, { existing, alias, tokenInfo, storageBackend, tier = null, maskedEmail = null, emailHash = null, now }) {
+function upsertSlotRecord(
+  index,
+  { existing, alias, tokenInfo, storageBackend, tier = null, weight = undefined, maskedEmail = null, emailHash = null, now },
+) {
   const id = existing?.id || createSlotId();
   const resolvedEmailHash = tokenInfo.emailHash || emailHash || existing?.emailHash || null;
   const quotaKey = resolvedEmailHash || existing?.quotaKey || id;
+  const resolvedWeight =
+    weight !== undefined && weight !== null
+      ? normalizeAccountWeight(weight, { strict: true })
+      : normalizeAccountWeight(existing?.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT });
   const record = {
     id,
     alias,
@@ -443,6 +474,7 @@ function upsertSlotRecord(index, { existing, alias, tokenInfo, storageBackend, t
     subHash: tokenInfo.subHash || existing?.subHash || null,
     quotaKey,
     tier: tier || existing?.tier || null,
+    weight: resolvedWeight,
     authMethod: tokenInfo.authMethod || existing?.authMethod || 'oauth',
     hasRefreshToken: tokenInfo.hasRefreshToken,
     refreshTokenHash: tokenInfo.refreshTokenHash || existing?.refreshTokenHash || null,
@@ -588,6 +620,7 @@ export function upsertImportedAccounts(
 
 export function saveCurrentAccount({
   alias = null,
+  weight = undefined,
   force = false,
   storage = 'auto',
   baseDir = configDir(homedir()),
@@ -595,6 +628,9 @@ export function saveCurrentAccount({
   keyring = createKeyringBackend(),
   now = Date.now(),
 } = {}) {
+  if (weight !== undefined && weight !== null) {
+    normalizeAccountWeight(weight, { strict: true });
+  }
   return withAccountLock(
     () => {
       const activeCred = readActiveAgyCredential({ home, keyring });
@@ -642,6 +678,7 @@ export function saveCurrentAccount({
         alias: chosenAlias,
         tokenInfo,
         storageBackend: actualStorage,
+        weight,
         now,
       });
       writeAccountIndex(index, { baseDir });
@@ -886,6 +923,31 @@ export function syncActiveAccountBeforeLaunch({
   );
 }
 
+export function setAccountWeight(target, weight, { baseDir = configDir(homedir()), now = Date.now() } = {}) {
+  const validWeight = normalizeAccountWeight(weight, { strict: true });
+  return withAccountLock(
+    () => {
+      const index = readAccountIndex({ baseDir });
+      const slot = resolveAccountTarget(index.accounts, target);
+      if (!slot) {
+        const names = index.accounts.map((a) => a.alias).join(', ');
+        throw new Error(`Account "${target}" not found.${names ? ` Saved accounts: ${names}` : ''}`);
+      }
+      const oldWeight = normalizeAccountWeight(slot.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT });
+      slot.weight = validWeight;
+      slot.updatedAt = now;
+      writeAccountIndex(index, { baseDir });
+      return {
+        alias: slot.alias,
+        oldWeight,
+        newWeight: validWeight,
+        account: slot,
+      };
+    },
+    { baseDir },
+  );
+}
+
 export function renameAccount(oldTarget, newAlias, { baseDir = configDir(homedir()), now = Date.now() } = {}) {
   const validNew = validateAlias(newAlias);
   return withAccountLock(
@@ -1017,6 +1079,8 @@ export function exportEncryptedBackup({
           maskedEmail: slot.maskedEmail || null,
           emailHash: slot.emailHash || null,
           quotaKey: slot.quotaKey || null,
+          tier: slot.tier || null,
+          weight: normalizeAccountWeight(slot.weight, { fallback: DEFAULT_ACCOUNT_WEIGHT }),
           createdAt: slot.createdAt || now,
           lastUsedAt: slot.lastUsedAt || now,
           rawSecret,
@@ -1122,6 +1186,10 @@ export function importEncryptedBackup(
           alias: existing && !force ? existing.alias : desiredAlias,
           tokenInfo,
           storageBackend: actualStorage,
+          tier: item.tier || null,
+          weight: item.weight !== undefined ? item.weight : undefined,
+          maskedEmail: item.maskedEmail || null,
+          emailHash: item.emailHash || null,
           now,
         });
         if (existing) updated.push(saved.alias);

@@ -28,6 +28,7 @@ import {
   renameAccount,
   restorePreservedLogin,
   saveCurrentAccount,
+  setAccountWeight,
   switchToAccount,
   syncActiveAccountBeforeLaunch,
 } from '../src/account-store.mjs';
@@ -416,5 +417,111 @@ test('multi-account passive quota isolation, reset-due READY promotion, smart ne
     assert.equal(loadedCfg.autoHandoff, true);
   } finally {
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('account priority weights prioritize higher-weight READY accounts, exclude weight=0 from auto-pick, and persist across backup/restore', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agy-bar-weight-'));
+  const baseDir = join(home, '.gemini', 'config', 'agy-bar');
+  const home2 = mkdtempSync(join(tmpdir(), 'agy-bar-weight2-'));
+  const baseDir2 = join(home2, '.gemini', 'config', 'agy-bar');
+  try {
+    const keyring = createMemoryKeyring();
+    const now = Date.parse('2026-11-27T22:00:00Z');
+
+    const tokHigh = makeFakeToken({ email: 'high@example.com', sub: 'sub-h', access: 'acc-h', refresh: 'ref-h' });
+    const tokFullLow = makeFakeToken({ email: 'low@example.com', sub: 'sub-l', access: 'acc-l', refresh: 'ref-l' });
+    const tokManual = makeFakeToken({ email: 'free@example.com', sub: 'sub-f', access: 'acc-f', refresh: 'ref-f' });
+    const tokCur = makeFakeToken({ email: 'cur@example.com', sub: 'sub-c', access: 'acc-c', refresh: 'ref-c' });
+
+    writeActiveAgyCredential(tokHigh, { home, keyring });
+    const aHigh = saveCurrentAccount({ alias: 'vip', weight: 90, baseDir, home, keyring, now }).account;
+    assert.equal(aHigh.weight, 90);
+
+    writeActiveAgyCredential(tokFullLow, { home, keyring });
+    const aLow = saveCurrentAccount({ alias: 'secondary', baseDir, home, keyring, now }).account;
+    assert.equal(aLow.weight, 50);
+
+    writeActiveAgyCredential(tokManual, { home, keyring });
+    saveCurrentAccount({ alias: 'free-only', baseDir, home, keyring, now });
+    const wtRes = setAccountWeight('free-only', 0, { baseDir, now });
+    assert.equal(wtRes.oldWeight, 50);
+    assert.equal(wtRes.newWeight, 0);
+
+    writeActiveAgyCredential(tokCur, { home, keyring });
+    const aCur = saveCurrentAccount({ alias: 'current', weight: 70, baseDir, home, keyring, now }).account;
+
+    // Invalid weights are rejected cleanly.
+    assert.throws(() => setAccountWeight('vip', 101, { baseDir }), /Invalid weight/);
+    assert.throws(() => setAccountWeight('vip', -1, { baseDir }), /Invalid weight/);
+    assert.throws(() => setAccountWeight('vip', 12.5, { baseDir }), /Invalid weight/);
+
+    // current is LIMITED (0%); vip (weight 90) has 55% READY; secondary (weight 50) has 100% READY;
+    // free-only (weight 0) has 100% READY but must NEVER be auto-picked!
+    syncSharedQuota(
+      { 'gemini-5h': { remaining_fraction: 0, reset_time: '2026-11-28T01:00:00Z' } },
+      { baseDir, now, accountKey: hashAccountIdentifier('cur@example.com') },
+    );
+    syncSharedQuota(
+      { 'gemini-5h': { remaining_fraction: 0.55, reset_time: '2026-11-28T01:00:00Z' } },
+      { baseDir, now, accountKey: hashAccountIdentifier('high@example.com') },
+    );
+    syncSharedQuota(
+      { 'gemini-5h': { remaining_fraction: 1.0, reset_time: '2026-11-28T01:00:00Z' } },
+      { baseDir, now, accountKey: hashAccountIdentifier('low@example.com') },
+    );
+    syncSharedQuota(
+      { 'gemini-5h': { remaining_fraction: 1.0, reset_time: '2026-11-28T01:00:00Z' } },
+      { baseDir, now, accountKey: hashAccountIdentifier('free@example.com') },
+    );
+
+    const rows = listAccountsWithQuota({ baseDir, now });
+    // Table is sorted by weight desc: vip (90) -> current (70) -> secondary (50) -> free-only (0).
+    assert.deepEqual(
+      rows.map((r) => r.alias),
+      ['vip', 'current', 'secondary', 'free-only'],
+    );
+    const table = formatAccountTable(rows, { color: false, now });
+    assert.ok(table.includes('Wt'));
+    assert.ok(table.includes('90'));
+    assert.ok(table.includes('off'));
+
+    // Even though secondary has 100% vs vip's 55%, both are READY so higher weight (vip=90) wins!
+    const picked = pickNextBestAccount(rows, { currentId: aCur.id, family: 'gemini' });
+    assert.equal(picked.account.alias, 'vip');
+
+    // Statusline SWAP hint and maybeAutoSwitchAccount both respect higher weight!
+    const hint = computeSwapHint({
+      payload: {
+        model: { id: 'gemini-4-neon' },
+        quota: { 'gemini-5h': { remaining_fraction: 0, reset_time: '2026-11-28T01:00:00Z' } },
+      },
+      activeAccountId: aCur.id,
+      baseDir,
+      now,
+    });
+    assert.equal(hint?.alias, 'vip');
+
+    const sw = maybeAutoSwitchAccount({ family: 'gemini', baseDir, home, keyring, now });
+    assert.equal(sw.switched, true);
+    assert.equal(sw.toAlias, 'vip');
+
+    // If all remaining accounts have weight 0, pickNextBestAccount returns null instead of picking manual-only account.
+    setAccountWeight('vip', 0, { baseDir, now });
+    setAccountWeight('secondary', 0, { baseDir, now });
+    const onlyManualRows = listAccountsWithQuota({ baseDir, now });
+    assert.equal(pickNextBestAccount(onlyManualRows, { currentId: aCur.id, family: 'gemini' }), null);
+
+    // Weights persist across encrypted backup & restore.
+    setAccountWeight('vip', 95, { baseDir, now });
+    const env = exportEncryptedBackup({ passphrase: 'test-pass', baseDir, keyring, now });
+    const keyring2 = createMemoryKeyring();
+    importEncryptedBackup(env, { passphrase: 'test-pass', baseDir: baseDir2, keyring: keyring2, now });
+    const restoredRows = listAccountsWithQuota({ baseDir: baseDir2, now });
+    assert.equal(restoredRows.find((r) => r.alias === 'vip')?.weight, 95);
+    assert.equal(restoredRows.find((r) => r.alias === 'free-only')?.weight, 0);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(home2, { recursive: true, force: true });
   }
 });

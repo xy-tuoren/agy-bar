@@ -26,6 +26,7 @@ agy-bar <command>   # installed at ~/.local/bin/agy-bar (or: node ~/.gemini/conf
 | Switch accounts (browser-free) | `agy-bar switch <alias\|next> [--family auto\|gemini\|claude]` (user TTY only: omit alias for picker, or add `--handoff`) |
 | Workspace context handoff | `agy-bar handoff --print` (or user TTY: `agy-bar handoff` to launch fresh `agy -i`) |
 | Rename / remove / encrypted backup | `agy-bar account rename <old> <new>` / `agy-bar account rm <alias>` / `agy-bar account backup\|restore <file>` |
+| Set account priority weight (0–100) | `agy-bar account weight <alias> <0-100> [<alias2> <w2>...]` (higher = preferred first; `0` = manual only) |
 | Set concise tab title (~10 tokens) | `agy-bar title "<4-8 char concise topic>"` |
 | Clear custom tab title | `agy-bar title --clear` |
 | Configure tab title sync | `agy-bar config set tabTitle on\|off tabTitleSource auto\|title\|dir\|title+dir` |
